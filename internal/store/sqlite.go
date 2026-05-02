@@ -311,7 +311,7 @@ func (r *SQLiteRepository) Search(ctx context.Context, filter SearchFilter) ([]d
 	if strings.TrimSpace(filter.Query) != "" {
 		base += ` JOIN torrents_fts fts ON fts.rowid = t.id`
 		conds = append(conds, `torrents_fts MATCH ?`)
-		args = append(args, filter.Query)
+		args = append(args, rewriteSearchQuery(filter.Query))
 	}
 	if filter.Source != "" {
 		conds = append(conds, `EXISTS (SELECT 1 FROM torrent_sources s WHERE s.infohash = t.infohash AND s.source = ?)`)

@@ -21,7 +21,7 @@ func TestSQLiteRepositoryRoundTrip(t *testing.T) {
 	err = repo.Upsert(context.Background(),
 		domain.Torrent{
 			InfoHash:    infohash,
-			Title:       "Example Linux ISO",
+			Title:       "The Rookie S08E17 Example Linux ISO",
 			Category:    "software",
 			SizeBytes:   1024,
 			Seeders:     7,
@@ -34,7 +34,7 @@ func TestSQLiteRepositoryRoundTrip(t *testing.T) {
 			Source:      "sample",
 			SourceID:    "fixture-1",
 			SourceURL:   "https://example.invalid/torrent/1",
-			Title:       "Example Linux ISO",
+			Title:       "The Rookie S08E17 Example Linux ISO",
 			Category:    "software",
 			SizeBytes:   1024,
 			Seeders:     7,
@@ -59,6 +59,18 @@ func TestSQLiteRepositoryRoundTrip(t *testing.T) {
 	if got, want := results[0].InfoHash, infohash; got != want {
 		t.Fatalf("result infohash = %q, want %q", got, want)
 	}
+
+	seasonResults, err := repo.Search(context.Background(), SearchFilter{Query: "The Rookie S08", Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := len(seasonResults), 1; got != want {
+		t.Fatalf("season results len = %d, want %d", got, want)
+	}
+	if got, want := seasonResults[0].InfoHash, infohash; got != want {
+		t.Fatalf("season result infohash = %q, want %q", got, want)
+	}
+
 	details, err := repo.Get(context.Background(), infohash)
 	if err != nil {
 		t.Fatal(err)

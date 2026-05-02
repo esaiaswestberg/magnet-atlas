@@ -211,8 +211,8 @@ func (r *PostgresRepository) Search(ctx context.Context, filter SearchFilter) ([
 	conds := []string{}
 	param := 1
 	if strings.TrimSpace(filter.Query) != "" {
-		conds = append(conds, fmt.Sprintf(`t.search_document @@ plainto_tsquery('simple', $%d)`, param))
-		args = append(args, filter.Query)
+		conds = append(conds, fmt.Sprintf(`t.search_document @@ to_tsquery('simple', $%d)`, param))
+		args = append(args, rewriteTSQuery(filter.Query))
 		param++
 	}
 	if filter.Source != "" {
