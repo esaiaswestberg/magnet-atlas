@@ -1,3 +1,4 @@
 config.yaml
 magnet-atlas.db
 *.gen.go
+tmp/**/*
