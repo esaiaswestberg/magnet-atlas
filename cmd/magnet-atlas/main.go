@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -18,34 +19,54 @@ import (
 
 func main() {
 	var configPath string
+	var ingestOnce bool
 	flag.StringVar(&configPath, "config", "config.yaml", "path to the YAML configuration file")
+	flag.BoolVar(&ingestOnce, "ingest-once", false, "run a single ingestion pass and exit")
 	flag.Parse()
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
+	ctx := context.Background()
+	var stop func()
+	if !ingestOnce {
+		ctx, stop = signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+	}
+
+	if err := run(ctx, configPath, ingestOnce, logger); err != nil {
+		logger.Error("runtime error", "error", err)
+		os.Exit(1)
+	}
+}
+
+func run(ctx context.Context, configPath string, ingestOnce bool, logger *slog.Logger) error {
 	cfg, err := config.Load(configPath)
 	if err != nil {
-		logger.Error("load config", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("load config: %w", err)
 	}
 
 	repo, err := store.OpenSQLite(cfg.Database.Path)
 	if err != nil {
-		logger.Error("open store", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("open store: %w", err)
 	}
 	defer repo.Close()
 
-	openAPISpec, err := os.ReadFile("api/openapi.yaml")
-	if err != nil {
-		logger.Error("read openapi spec", "error", err)
-		os.Exit(1)
-	}
-
 	daemon, err := app.New(cfg, repo, logger)
 	if err != nil {
-		logger.Error("build app", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("build app: %w", err)
+	}
+
+	if ingestOnce {
+		logger.Info("starting one-shot ingest")
+		if err := daemon.IngestOnce(ctx); err != nil {
+			return err
+		}
+		return nil
+	}
+
+	openAPISpec, err := os.ReadFile("api/openapi.yaml")
+	if err != nil {
+		return fmt.Errorf("read openapi spec: %w", err)
 	}
 
 	server := api.NewServer(repo, openAPISpec)
@@ -54,9 +75,6 @@ func main() {
 		Handler:           server.Handler(),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
-
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -74,13 +92,14 @@ func main() {
 	case <-ctx.Done():
 	case err := <-errCh:
 		if err != nil {
-			logger.Error("runtime error", "error", err)
+			return err
 		}
 	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
-		logger.Error("shutdown", "error", err)
+		return fmt.Errorf("shutdown: %w", err)
 	}
+	return nil
 }
