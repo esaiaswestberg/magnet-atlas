@@ -26,10 +26,15 @@ type Config struct {
 
 // SourceConfig declares a single source adapter.
 type SourceConfig struct {
-	Name        string `yaml:"name"`
-	Type        string `yaml:"type"`
-	Enabled     bool   `yaml:"enabled"`
-	FixturePath string `yaml:"fixture_path,omitempty"`
+	Name         string        `yaml:"name"`
+	Type         string        `yaml:"type"`
+	Enabled      bool          `yaml:"enabled"`
+	FixturePath  string        `yaml:"fixture_path,omitempty"`
+	BaseURL      string        `yaml:"base_url,omitempty"`
+	Categories   []string      `yaml:"categories,omitempty"`
+	MaxPages     int           `yaml:"max_pages,omitempty"`
+	Concurrency  int           `yaml:"concurrency,omitempty"`
+	RequestDelay time.Duration `yaml:"request_delay,omitempty"`
 }
 
 // Load reads and validates a YAML config file.
@@ -57,6 +62,14 @@ func applyDefaults(cfg *Config) {
 	}
 	if strings.TrimSpace(cfg.Database.Path) == "" {
 		cfg.Database.Path = "./magnet-atlas.db"
+	}
+	for i := range cfg.Sources {
+		if strings.TrimSpace(cfg.Sources[i].BaseURL) == "" && cfg.Sources[i].Type == "1337x" {
+			cfg.Sources[i].BaseURL = "https://www.1337xx.to"
+		}
+		if cfg.Sources[i].Type == "1337x" && cfg.Sources[i].Concurrency <= 0 {
+			cfg.Sources[i].Concurrency = 4
+		}
 	}
 }
 
@@ -86,8 +99,12 @@ func validate(cfg *Config) error {
 			if strings.TrimSpace(source.FixturePath) == "" {
 				errs = append(errs, idx+".fixture_path is required for fixture sources")
 			}
+		case "1337x":
+			if strings.TrimSpace(source.BaseURL) == "" {
+				errs = append(errs, idx+".base_url is required for 1337x sources")
+			}
 		default:
-			errs = append(errs, idx+".type must be fixture for v1")
+			errs = append(errs, idx+".type must be fixture or 1337x for v1")
 		}
 	}
 	if len(errs) > 0 {

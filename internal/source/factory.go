@@ -12,6 +12,8 @@ func NewFactory() Factory {
 		switch cfg.Type {
 		case "fixture":
 			return NewFixtureAdapter(cfg)
+		case "1337x":
+			return New1337XAdapter(cfg)
 		default:
 			return nil, fmt.Errorf("unsupported source type %q", cfg.Type)
 		}

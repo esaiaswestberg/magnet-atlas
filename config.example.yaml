@@ -12,3 +12,7 @@ sources:
     type: fixture
     enabled: true
     fixture_path: ./testdata/sample-fixture.json
+  - name: 1337x
+    type: 1337x
+    enabled: false
+    base_url: https://www.1337xx.to
