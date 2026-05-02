@@ -44,12 +44,6 @@ This separation keeps source-specific behavior isolated and makes it easier to a
 
 Source support is configurable. The engine should not assume a fixed set of torrent sites.
 
-Examples of source types the project may support include:
-
-- rarbg
-- 1337x.to
-- The Pirate Bay
-
 Each source can be enabled, disabled, or configured independently.
 
 ## Future Web UI
