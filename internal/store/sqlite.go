@@ -51,6 +51,7 @@ func (r *SQLiteRepository) migrate(ctx context.Context) error {
 			published_at TEXT NOT NULL DEFAULT '',
 			magnet_uri TEXT NOT NULL DEFAULT '',
 			download_url TEXT NOT NULL DEFAULT '',
+			extra_text TEXT NOT NULL DEFAULT '[]',
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL
 		);`,
@@ -60,9 +61,10 @@ func (r *SQLiteRepository) migrate(ctx context.Context) error {
 			infohash UNINDEXED,
 			title,
 			category,
+			extra_text,
 			content=''
 		);`,
-	`CREATE TABLE IF NOT EXISTS torrent_sources (
+		`CREATE TABLE IF NOT EXISTS torrent_sources (
 			infohash TEXT NOT NULL,
 			source TEXT NOT NULL,
 			source_key TEXT NOT NULL,
@@ -75,6 +77,7 @@ func (r *SQLiteRepository) migrate(ctx context.Context) error {
 			published_at TEXT NOT NULL DEFAULT '',
 			magnet_uri TEXT NOT NULL DEFAULT '',
 			download_url TEXT NOT NULL DEFAULT '',
+			extra_text TEXT NOT NULL DEFAULT '[]',
 			observed_at TEXT NOT NULL,
 			raw_json TEXT NOT NULL DEFAULT '',
 			PRIMARY KEY (infohash, source, source_key)
@@ -86,15 +89,18 @@ func (r *SQLiteRepository) migrate(ctx context.Context) error {
 			updated_at TEXT NOT NULL,
 			PRIMARY KEY (source, section)
 		);`,
-		`CREATE TRIGGER IF NOT EXISTS torrents_ai AFTER INSERT ON torrents BEGIN
-			INSERT INTO torrents_fts(rowid, infohash, title, category) VALUES (new.id, new.infohash, new.title, new.category);
+		`DROP TRIGGER IF EXISTS torrents_ai;`,
+		`DROP TRIGGER IF EXISTS torrents_ad;`,
+		`DROP TRIGGER IF EXISTS torrents_au;`,
+		`CREATE TRIGGER torrents_ai AFTER INSERT ON torrents BEGIN
+			INSERT INTO torrents_fts(rowid, infohash, title, category, extra_text) VALUES (new.id, new.infohash, new.normalized_title, new.category, new.extra_text);
 		END;`,
-		`CREATE TRIGGER IF NOT EXISTS torrents_ad AFTER DELETE ON torrents BEGIN
-			INSERT INTO torrents_fts(torrents_fts, rowid, infohash, title, category) VALUES ('delete', old.id, old.infohash, old.title, old.category);
+		`CREATE TRIGGER torrents_ad AFTER DELETE ON torrents BEGIN
+			INSERT INTO torrents_fts(torrents_fts, rowid, infohash, title, category, extra_text) VALUES ('delete', old.id, old.infohash, old.normalized_title, old.category, old.extra_text);
 		END;`,
-		`CREATE TRIGGER IF NOT EXISTS torrents_au AFTER UPDATE ON torrents BEGIN
-			INSERT INTO torrents_fts(torrents_fts, rowid, infohash, title, category) VALUES ('delete', old.id, old.infohash, old.title, old.category);
-			INSERT INTO torrents_fts(rowid, infohash, title, category) VALUES (new.id, new.infohash, new.title, new.category);
+		`CREATE TRIGGER torrents_au AFTER UPDATE ON torrents BEGIN
+			INSERT INTO torrents_fts(torrents_fts, rowid, infohash, title, category, extra_text) VALUES ('delete', old.id, old.infohash, old.normalized_title, old.category, old.extra_text);
+			INSERT INTO torrents_fts(rowid, infohash, title, category, extra_text) VALUES (new.id, new.infohash, new.normalized_title, new.category, new.extra_text);
 		END;`,
 	}
 
@@ -103,7 +109,91 @@ func (r *SQLiteRepository) migrate(ctx context.Context) error {
 			return fmt.Errorf("migration failed: %w", err)
 		}
 	}
+	if err := r.ensureSQLiteColumn(ctx, "torrents", "extra_text", `ALTER TABLE torrents ADD COLUMN extra_text TEXT NOT NULL DEFAULT '[]';`); err != nil {
+		return err
+	}
+	if err := r.ensureSQLiteColumn(ctx, "torrent_sources", "extra_text", `ALTER TABLE torrent_sources ADD COLUMN extra_text TEXT NOT NULL DEFAULT '[]';`); err != nil {
+		return err
+	}
+	if err := r.ensureSQLiteFTS(ctx); err != nil {
+		return err
+	}
 	return nil
+}
+
+func (r *SQLiteRepository) ensureSQLiteColumn(ctx context.Context, table, column, stmt string) error {
+	rows, err := r.db.QueryContext(ctx, "PRAGMA table_info("+table+")")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, typ string
+		var notnull int
+		var dfltValue any
+		var pk int
+		if err := rows.Scan(&cid, &name, &typ, &notnull, &dfltValue, &pk); err != nil {
+			return err
+		}
+		if name == column {
+			return nil
+		}
+	}
+	if _, err := r.db.ExecContext(ctx, stmt); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (r *SQLiteRepository) ensureSQLiteFTS(ctx context.Context) error {
+	hasExtra, err := r.sqliteFTSHasColumn(ctx, "extra_text")
+	if err != nil {
+		return err
+	}
+	if hasExtra {
+		return nil
+	}
+	stmts := []string{
+		`DROP TABLE IF EXISTS torrents_fts;`,
+		`CREATE VIRTUAL TABLE torrents_fts USING fts5(
+			infohash UNINDEXED,
+			title,
+			category,
+			extra_text,
+			content=''
+		);`,
+		`INSERT INTO torrents_fts(rowid, infohash, title, category, extra_text)
+			SELECT id, infohash, normalized_title, category, extra_text FROM torrents;`,
+	}
+	for _, stmt := range stmts {
+		if _, err := r.db.ExecContext(ctx, stmt); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *SQLiteRepository) sqliteFTSHasColumn(ctx context.Context, column string) (bool, error) {
+	rows, err := r.db.QueryContext(ctx, `PRAGMA table_info(torrents_fts)`)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, typ string
+		var notnull int
+		var dfltValue any
+		var pk int
+		if err := rows.Scan(&cid, &name, &typ, &notnull, &dfltValue, &pk); err != nil {
+			return false, err
+		}
+		if name == column {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
 }
 
 // Upsert stores a canonical torrent and one per-source observation.
@@ -121,6 +211,7 @@ func (r *SQLiteRepository) Upsert(ctx context.Context, torrent domain.Torrent, o
 	if merged.Title == "" {
 		merged.Title = torrent.InfoHash
 	}
+	extraText := encodeTextList(merged.ExtraText)
 
 	publishedAt := ""
 	if !merged.PublishedAt.IsZero() {
@@ -135,9 +226,9 @@ func (r *SQLiteRepository) Upsert(ctx context.Context, torrent domain.Torrent, o
 
 	if current.InfoHash == "" {
 		res, err := tx.ExecContext(ctx, `
-			INSERT INTO torrents (infohash, title, normalized_title, category, size_bytes, seeders, leechers, published_at, magnet_uri, download_url, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			merged.InfoHash, merged.Title, normalizeTitle(merged.Title), merged.Category, merged.SizeBytes, merged.Seeders, merged.Leechers, publishedAt, merged.MagnetURI, merged.DownloadURL, now, now,
+			INSERT INTO torrents (infohash, title, normalized_title, category, size_bytes, seeders, leechers, published_at, magnet_uri, download_url, extra_text, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			merged.InfoHash, merged.Title, normalizeTitle(merged.Title), merged.Category, merged.SizeBytes, merged.Seeders, merged.Leechers, publishedAt, merged.MagnetURI, merged.DownloadURL, extraText, now, now,
 		)
 		if err != nil {
 			return err
@@ -148,9 +239,9 @@ func (r *SQLiteRepository) Upsert(ctx context.Context, torrent domain.Torrent, o
 	} else {
 		_, err := tx.ExecContext(ctx, `
 			UPDATE torrents
-			SET title = ?, normalized_title = ?, category = ?, size_bytes = ?, seeders = ?, leechers = ?, published_at = ?, magnet_uri = ?, download_url = ?, updated_at = ?
+			SET title = ?, normalized_title = ?, category = ?, size_bytes = ?, seeders = ?, leechers = ?, published_at = ?, magnet_uri = ?, download_url = ?, extra_text = ?, updated_at = ?
 			WHERE infohash = ?`,
-			merged.Title, normalizeTitle(merged.Title), merged.Category, merged.SizeBytes, merged.Seeders, merged.Leechers, publishedAt, merged.MagnetURI, merged.DownloadURL, now, merged.InfoHash,
+			merged.Title, normalizeTitle(merged.Title), merged.Category, merged.SizeBytes, merged.Seeders, merged.Leechers, publishedAt, merged.MagnetURI, merged.DownloadURL, extraText, now, merged.InfoHash,
 		)
 		if err != nil {
 			return err
@@ -178,8 +269,8 @@ func (r *SQLiteRepository) Upsert(ctx context.Context, torrent domain.Torrent, o
 	}
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO torrent_sources (
-			infohash, source, source_key, source_url, title, category, size_bytes, seeders, leechers, published_at, magnet_uri, download_url, observed_at, raw_json
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			infohash, source, source_key, source_url, title, category, size_bytes, seeders, leechers, published_at, magnet_uri, download_url, extra_text, observed_at, raw_json
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(infohash, source, source_key) DO UPDATE SET
 			source_url = excluded.source_url,
 			title = excluded.title,
@@ -190,23 +281,16 @@ func (r *SQLiteRepository) Upsert(ctx context.Context, torrent domain.Torrent, o
 			published_at = excluded.published_at,
 			magnet_uri = excluded.magnet_uri,
 			download_url = excluded.download_url,
+			extra_text = excluded.extra_text,
 			observed_at = excluded.observed_at,
 			raw_json = excluded.raw_json`,
-		merged.InfoHash, obs.Source, sourceKey, obs.SourceURL, obs.Title, obs.Category, obs.SizeBytes, obs.Seeders, obs.Leechers, obsPublishedAt, obs.MagnetURI, obs.DownloadURL, obsObservedAt, rawJSON,
+		merged.InfoHash, obs.Source, sourceKey, obs.SourceURL, obs.Title, obs.Category, obs.SizeBytes, obs.Seeders, obs.Leechers, obsPublishedAt, obs.MagnetURI, obs.DownloadURL, encodeTextList(obs.ExtraText), obsObservedAt, rawJSON,
 	)
 	if err != nil {
 		return err
 	}
 
 	return tx.Commit()
-}
-
-func normalizeTitle(title string) string {
-	title = strings.ToLower(title)
-	title = strings.ReplaceAll(title, "_", " ")
-	title = strings.ReplaceAll(title, "-", " ")
-	title = strings.Join(strings.Fields(title), " ")
-	return title
 }
 
 func (r *SQLiteRepository) Search(ctx context.Context, filter SearchFilter) ([]domain.Torrent, error) {
@@ -220,7 +304,7 @@ func (r *SQLiteRepository) Search(ctx context.Context, filter SearchFilter) ([]d
 	}
 
 	base := `
-		SELECT DISTINCT t.infohash, t.title, t.category, t.size_bytes, t.seeders, t.leechers, t.published_at, t.magnet_uri, t.download_url
+		SELECT DISTINCT t.infohash, t.title, t.category, t.size_bytes, t.seeders, t.leechers, t.published_at, t.magnet_uri, t.download_url, t.extra_text
 		FROM torrents t`
 	args := make([]any, 0, 4)
 	conds := []string{}
@@ -233,7 +317,16 @@ func (r *SQLiteRepository) Search(ctx context.Context, filter SearchFilter) ([]d
 		conds = append(conds, `EXISTS (SELECT 1 FROM torrent_sources s WHERE s.infohash = t.infohash AND s.source = ?)`)
 		args = append(args, filter.Source)
 	}
-	if filter.Category != "" {
+	if len(filter.Categories) > 0 {
+		placeholders := make([]string, 0, len(filter.Categories))
+		for range filter.Categories {
+			placeholders = append(placeholders, "?")
+		}
+		conds = append(conds, `t.category IN (`+strings.Join(placeholders, ", ")+`)`)
+		for _, category := range filter.Categories {
+			args = append(args, category)
+		}
+	} else if filter.Category != "" {
 		conds = append(conds, `t.category = ?`)
 		args = append(args, filter.Category)
 	}
@@ -266,7 +359,7 @@ func (r *SQLiteRepository) Get(ctx context.Context, infohash string) (Details, e
 		return Details{}, err
 	}
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT source, source_key, source_url, title, category, size_bytes, seeders, leechers, published_at, magnet_uri, download_url, observed_at, raw_json
+		SELECT source, source_key, source_url, title, category, size_bytes, seeders, leechers, published_at, magnet_uri, download_url, extra_text, observed_at, raw_json
 		FROM torrent_sources
 		WHERE infohash = ?
 		ORDER BY observed_at DESC`, infohash)
@@ -278,10 +371,11 @@ func (r *SQLiteRepository) Get(ctx context.Context, infohash string) (Details, e
 	var sources []domain.SourceObservation
 	for rows.Next() {
 		var obs domain.SourceObservation
-		var publishedAt, observedAt string
-		if err := rows.Scan(&obs.Source, &obs.SourceID, &obs.SourceURL, &obs.Title, &obs.Category, &obs.SizeBytes, &obs.Seeders, &obs.Leechers, &publishedAt, &obs.MagnetURI, &obs.DownloadURL, &observedAt, &obs.RawJSON); err != nil {
+		var publishedAt, observedAt, extraText string
+		if err := rows.Scan(&obs.Source, &obs.SourceID, &obs.SourceURL, &obs.Title, &obs.Category, &obs.SizeBytes, &obs.Seeders, &obs.Leechers, &publishedAt, &obs.MagnetURI, &obs.DownloadURL, &extraText, &observedAt, &obs.RawJSON); err != nil {
 			return Details{}, err
 		}
+		obs.ExtraText = decodeTextList(extraText)
 		if publishedAt != "" {
 			if ts, err := time.Parse(time.RFC3339Nano, publishedAt); err == nil {
 				obs.PublishedAt = ts
@@ -324,6 +418,23 @@ func (r *SQLiteRepository) ListSources(ctx context.Context) ([]string, error) {
 	return sources, rows.Err()
 }
 
+func (r *SQLiteRepository) ListCategories(ctx context.Context) ([]string, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT DISTINCT category FROM torrents WHERE category <> '' ORDER BY category ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var categories []string
+	for rows.Next() {
+		var category string
+		if err := rows.Scan(&category); err != nil {
+			return nil, err
+		}
+		categories = append(categories, category)
+	}
+	return categories, rows.Err()
+}
+
 func (r *SQLiteRepository) Stats(ctx context.Context) (Stats, error) {
 	var stats Stats
 	if err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM torrents`).Scan(&stats.TorrentCount); err != nil {
@@ -364,7 +475,7 @@ func (r *SQLiteRepository) SetSourceState(ctx context.Context, source, section, 
 
 func (r *SQLiteRepository) getTorrent(ctx context.Context, infohash string) (domain.Torrent, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT infohash, title, category, size_bytes, seeders, leechers, published_at, magnet_uri, download_url
+		SELECT infohash, title, category, size_bytes, seeders, leechers, published_at, magnet_uri, download_url, extra_text
 		FROM torrents
 		WHERE infohash = ?`, infohash)
 	return scanTorrent(row)
@@ -374,10 +485,11 @@ func scanTorrent(scanner interface {
 	Scan(dest ...any) error
 }) (domain.Torrent, error) {
 	var t domain.Torrent
-	var publishedAt string
-	if err := scanner.Scan(&t.InfoHash, &t.Title, &t.Category, &t.SizeBytes, &t.Seeders, &t.Leechers, &publishedAt, &t.MagnetURI, &t.DownloadURL); err != nil {
+	var publishedAt, extraText string
+	if err := scanner.Scan(&t.InfoHash, &t.Title, &t.Category, &t.SizeBytes, &t.Seeders, &t.Leechers, &publishedAt, &t.MagnetURI, &t.DownloadURL, &extraText); err != nil {
 		return domain.Torrent{}, err
 	}
+	t.ExtraText = decodeTextList(extraText)
 	if publishedAt != "" {
 		ts, err := time.Parse(time.RFC3339Nano, publishedAt)
 		if err == nil {

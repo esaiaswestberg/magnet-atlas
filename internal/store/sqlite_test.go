@@ -28,6 +28,7 @@ func TestSQLiteRepositoryRoundTrip(t *testing.T) {
 			Leechers:    1,
 			PublishedAt: time.Unix(1000, 0).UTC(),
 			MagnetURI:   "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567",
+			ExtraText:   []string{"The rookie follows the detective."},
 		},
 		domain.SourceObservation{
 			Source:      "sample",
@@ -41,18 +42,22 @@ func TestSQLiteRepositoryRoundTrip(t *testing.T) {
 			PublishedAt: time.Unix(1000, 0).UTC(),
 			ObservedAt:  time.Unix(2000, 0).UTC(),
 			RawJSON:     `{"hello":"world"}`,
+			ExtraText:   []string{"The rookie follows the detective."},
 		},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	results, err := repo.Search(context.Background(), SearchFilter{Query: "Example", Limit: 10})
+	results, err := repo.Search(context.Background(), SearchFilter{Query: "rookie", Limit: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got, want := len(results), 1; got != want {
 		t.Fatalf("results len = %d, want %d", got, want)
+	}
+	if got, want := results[0].InfoHash, infohash; got != want {
+		t.Fatalf("result infohash = %q, want %q", got, want)
 	}
 	details, err := repo.Get(context.Background(), infohash)
 	if err != nil {

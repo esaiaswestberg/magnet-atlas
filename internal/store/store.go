@@ -19,11 +19,12 @@ type Options struct {
 
 // SearchFilter narrows torrent search results.
 type SearchFilter struct {
-	Query    string
-	Source   string
-	Category string
-	Limit    int
-	Offset   int
+	Query      string
+	Source     string
+	Category   string
+	Categories []string
+	Limit      int
+	Offset     int
 }
 
 // Stats summarizes the current index state.
@@ -47,6 +48,7 @@ type Repository interface {
 	Get(ctx context.Context, infohash string) (Details, error)
 	HasInfohash(ctx context.Context, infohash string) (bool, error)
 	ListSources(ctx context.Context) ([]string, error)
+	ListCategories(ctx context.Context) ([]string, error)
 	Stats(ctx context.Context) (Stats, error)
 	GetSourceState(ctx context.Context, source, section string) (string, error)
 	SetSourceState(ctx context.Context, source, section, state string) error

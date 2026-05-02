@@ -31,6 +31,7 @@ var (
 	seedersRe     = regexp.MustCompile(`(?im)^\s*Seeders\s+(\d+)\s*$`)
 	leechersRe    = regexp.MustCompile(`(?im)^\s*Leechers\s+(\d+)\s*$`)
 	categoryRe    = regexp.MustCompile(`(?im)^\s*Category\s+(.+?)\s*$`)
+	descriptionRe = regexp.MustCompile(`(?mis)^\s*Description\s*:?\s*(.+?)(?:\s*^\s*(?:Category\s+|Total size\s+|Seeders\s+|Leechers\s+|Date uploaded\s+|Infohash\s*:?)|\s*$)`)
 	uploadedRe    = regexp.MustCompile(`(?im)^\s*Date uploaded\s+(.+?)\s*$`)
 	tagStripRe    = regexp.MustCompile(`(?s)<[^>]+>`)
 )
@@ -344,6 +345,7 @@ func (a *x1337Adapter) fetchDetail(ctx context.Context, item listingItem) (torre
 	if category == "" {
 		category = item.category
 	}
+	description := findMatch(text, descriptionRe)
 
 	sizeBytes := int64(0)
 	if sizeText := findMatch(text, sizeRe); sizeText != "" {
@@ -375,6 +377,7 @@ func (a *x1337Adapter) fetchDetail(ctx context.Context, item listingItem) (torre
 		"infohash":     infohash,
 		"magnet_uri":   magnetURI,
 		"category":     category,
+		"description":  description,
 		"size_bytes":   sizeBytes,
 		"seeders":      seeders,
 		"leechers":     leechers,
@@ -390,6 +393,7 @@ func (a *x1337Adapter) fetchDetail(ctx context.Context, item listingItem) (torre
 		Leechers:    leechers,
 		PublishedAt: publishedAt,
 		MagnetURI:   magnetURI,
+		ExtraText:   extraTextValues(description),
 	}
 	obs := domain.SourceObservation{
 		Source:      a.name,
@@ -404,6 +408,7 @@ func (a *x1337Adapter) fetchDetail(ctx context.Context, item listingItem) (torre
 		MagnetURI:   magnetURI,
 		ObservedAt:  time.Now().UTC(),
 		RawJSON:     string(raw),
+		ExtraText:   extraTextValues(description),
 	}
 	return torrentRecord{torrent: torrent, obs: obs}, nil
 }
@@ -614,4 +619,15 @@ func parse1337XDate(s string) (time.Time, error) {
 		}
 	}
 	return time.Time{}, fmt.Errorf("unsupported date %q", s)
+}
+
+func extraTextValues(values ...string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			out = append(out, value)
+		}
+	}
+	return out
 }

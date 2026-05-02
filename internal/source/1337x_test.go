@@ -27,6 +27,7 @@ func Test1337XAdapterFetchFirstWindow(t *testing.T) {
 		"/torrent/1234/example-torrent/": `<html><body>
 <h1>Example Torrent 2025 1080p</h1>
 <a href="magnet:?xt=urn:btih:0123456789ABCDEF0123456789ABCDEF01234567&dn=Example+Torrent">Magnet Download</a>
+Description The rookie follows the detective through another case.
 Category Movies
 Total size 1.5 GB
 Seeders 10
@@ -55,6 +56,12 @@ Infohash : 89ABCDEF0123456789ABCDEF0123456789ABCDEF
 	}
 	if got, want := len(result.Observations), 2; got != want {
 		t.Fatalf("observations len = %d, want %d", got, want)
+	}
+	if got, want := result.Torrents[0].ExtraText, []string{"The rookie follows the detective through another case."}; !equalStrings(got, want) {
+		t.Fatalf("torrent extra text = %#v, want %#v", got, want)
+	}
+	if got, want := result.Observations[0].ExtraText, []string{"The rookie follows the detective through another case."}; !equalStrings(got, want) {
+		t.Fatalf("observation extra text = %#v, want %#v", got, want)
 	}
 	state, ok := result.State["movies"]
 	if !ok {
@@ -266,12 +273,15 @@ func (r *testRepository) Upsert(context.Context, domain.Torrent, domain.SourceOb
 func (r *testRepository) Search(context.Context, store.SearchFilter) ([]domain.Torrent, error) {
 	return nil, nil
 }
-func (r *testRepository) Get(context.Context, string) (store.Details, error) { return store.Details{}, nil }
+func (r *testRepository) Get(context.Context, string) (store.Details, error) {
+	return store.Details{}, nil
+}
 func (r *testRepository) HasInfohash(_ context.Context, infohash string) (bool, error) {
 	return r.known[infohash], nil
 }
-func (r *testRepository) ListSources(context.Context) ([]string, error) { return nil, nil }
-func (r *testRepository) Stats(context.Context) (store.Stats, error)    { return store.Stats{}, nil }
+func (r *testRepository) ListSources(context.Context) ([]string, error)    { return nil, nil }
+func (r *testRepository) ListCategories(context.Context) ([]string, error) { return nil, nil }
+func (r *testRepository) Stats(context.Context) (store.Stats, error)       { return store.Stats{}, nil }
 func (r *testRepository) GetSourceState(_ context.Context, source, section string) (string, error) {
 	state, ok := r.states[source+"|"+section]
 	if !ok {
@@ -291,4 +301,16 @@ func containsPath(paths []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func equalStrings(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
 }

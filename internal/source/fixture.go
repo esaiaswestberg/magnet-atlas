@@ -64,6 +64,7 @@ func (a *FixtureAdapter) Fetch(ctx context.Context, _ store.Repository) (FetchRe
 			DownloadURL: item.Torrent.DownloadURL,
 			ObservedAt:  now,
 			RawJSON:     string(item.RawJSON),
+			ExtraText:   append([]string(nil), item.Torrent.ExtraText...),
 		})
 	}
 

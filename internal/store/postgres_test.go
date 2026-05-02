@@ -12,17 +12,19 @@ import (
 func TestBuildSearchText(t *testing.T) {
 	tests := []struct {
 		title, category string
+		extraText       []string
 		want            string
 	}{
-		{title: "Example Torrent", category: "software", want: "Example Torrent software"},
-		{title: "Example Torrent", category: "", want: "Example Torrent"},
+		{title: "Example Torrent", category: "software", want: "example torrent software"},
+		{title: "Example Torrent", category: "", want: "example torrent"},
 		{title: "", category: "software", want: "software"},
 		{title: " ", category: " ", want: ""},
+		{title: "the.rookie.s08e17.720p.hdtv.x264", category: "TV", extraText: []string{"The rookie follows the detective."}, want: "the rookie s08e17 720p hdtv x264 tv the rookie follows the detective"},
 	}
 
 	for _, tc := range tests {
-		if got := buildSearchText(tc.title, tc.category); got != tc.want {
-			t.Fatalf("buildSearchText(%q, %q) = %q, want %q", tc.title, tc.category, got, tc.want)
+		if got := buildSearchText(tc.title, tc.category, tc.extraText); got != tc.want {
+			t.Fatalf("buildSearchText(%q, %q, %v) = %q, want %q", tc.title, tc.category, tc.extraText, got, tc.want)
 		}
 	}
 }
@@ -61,6 +63,7 @@ func TestPostgresRepositoryIntegration(t *testing.T) {
 			Leechers:    3,
 			PublishedAt: time.Unix(2000, 0).UTC(),
 			MagnetURI:   "magnet:?xt=urn:btih:fedcba9876543210fedcba9876543210fedcba98",
+			ExtraText:   []string{"The rookie follows the detective."},
 		},
 		domain.SourceObservation{
 			Source:      "postgres-fixture",
@@ -74,18 +77,22 @@ func TestPostgresRepositoryIntegration(t *testing.T) {
 			PublishedAt: time.Unix(2000, 0).UTC(),
 			ObservedAt:  time.Unix(3000, 0).UTC(),
 			RawJSON:     `{"hello":"postgres"}`,
+			ExtraText:   []string{"The rookie follows the detective."},
 		},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	results, err := repo.Search(ctx, SearchFilter{Query: "Example", Limit: 10})
+	results, err := repo.Search(ctx, SearchFilter{Query: "rookie", Limit: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got, want := len(results), 1; got != want {
 		t.Fatalf("results len = %d, want %d", got, want)
+	}
+	if got, want := results[0].InfoHash, infohash; got != want {
+		t.Fatalf("result infohash = %q, want %q", got, want)
 	}
 
 	details, err := repo.Get(ctx, infohash)

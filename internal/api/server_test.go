@@ -13,10 +13,14 @@ import (
 )
 
 type fakeRepo struct {
-	stats   store.Stats
-	sources []string
-	items   []domain.Torrent
-	detail  store.Details
+	stats           store.Stats
+	sources         []string
+	categories      []string
+	items           []domain.Torrent
+	detail          store.Details
+	searchFilters   []store.SearchFilter
+	searchResponses []domain.Torrent
+	searchFn        func(store.SearchFilter) []domain.Torrent
 }
 
 func (f fakeRepo) Close() error                                                           { return nil }
@@ -25,8 +29,9 @@ func (f fakeRepo) Search(context.Context, store.SearchFilter) ([]domain.Torrent,
 	return f.items, nil
 }
 func (f fakeRepo) Get(context.Context, string) (store.Details, error) { return f.detail, nil }
-func (f fakeRepo) HasInfohash(context.Context, string) (bool, error)   { return false, nil }
+func (f fakeRepo) HasInfohash(context.Context, string) (bool, error)  { return false, nil }
 func (f fakeRepo) ListSources(context.Context) ([]string, error)      { return f.sources, nil }
+func (f fakeRepo) ListCategories(context.Context) ([]string, error)   { return f.categories, nil }
 func (f fakeRepo) Stats(context.Context) (store.Stats, error)         { return f.stats, nil }
 func (f fakeRepo) GetSourceState(context.Context, string, string) (string, error) {
 	return "", store.ErrSourceStateNotFound
@@ -34,7 +39,7 @@ func (f fakeRepo) GetSourceState(context.Context, string, string) (string, error
 func (f fakeRepo) SetSourceState(context.Context, string, string, string) error { return nil }
 
 func TestStatusEndpoint(t *testing.T) {
-	srv := NewServer(fakeRepo{stats: store.Stats{TorrentCount: 12, SourceCount: 3}}, []byte("openapi: 3.1.0\n"))
+	srv := NewServer(fakeRepo{stats: store.Stats{TorrentCount: 12, SourceCount: 3}}, []byte("openapi: 3.1.0\n"), nil)
 	req := httptest.NewRequest(http.MethodGet, "/v1/status", nil)
 	rec := httptest.NewRecorder()
 
@@ -46,7 +51,7 @@ func TestStatusEndpoint(t *testing.T) {
 }
 
 func TestDocsEndpoint(t *testing.T) {
-	srv := NewServer(fakeRepo{}, []byte("openapi: 3.1.0\n"))
+	srv := NewServer(fakeRepo{}, []byte("openapi: 3.1.0\n"), nil)
 	req := httptest.NewRequest(http.MethodGet, "/v1/", nil)
 	req.Host = "magnet-atlas.local"
 	rec := httptest.NewRecorder()
@@ -70,7 +75,7 @@ func TestOpenAPISpecEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read spec: %v", err)
 	}
-	srv := NewServer(fakeRepo{}, spec)
+	srv := NewServer(fakeRepo{}, spec, nil)
 	req := httptest.NewRequest(http.MethodGet, "/v1/openapi.yaml", nil)
 	req.Host = "example.test"
 	rec := httptest.NewRecorder()

@@ -145,6 +145,10 @@ components:
           type: string
         download_url:
           type: string
+        extra_text:
+          type: array
+          items:
+            type: string
         tags:
           type: array
           items:
@@ -177,6 +181,10 @@ components:
           type: string
         download_url:
           type: string
+        extra_text:
+          type: array
+          items:
+            type: string
         observed_at:
           type: string
           format: date-time

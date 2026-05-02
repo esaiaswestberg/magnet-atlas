@@ -86,7 +86,7 @@ func run(ctx context.Context, configPath string, ingestOnce bool, logger *slog.L
 		return fmt.Errorf("read openapi spec: %w", err)
 	}
 
-	server := api.NewServer(repo, openAPISpec)
+	server := api.NewServer(repo, openAPISpec, cfg.Server.TorznabAPIKeys)
 	httpServer := &http.Server{
 		Addr:              cfg.Server.Listen,
 		Handler:           server.Handler(),

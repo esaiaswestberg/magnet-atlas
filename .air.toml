@@ -5,7 +5,8 @@ testdata_dir = "testdata"
 tmp_dir = "tmp"
 
 [build]
-args_bin = ["--ingest-once"]
+#args_bin = ["--ingest-once"]
+args_bin = ["--verbose"]
 bin = "./tmp/main"
 cmd = "go build -o ./tmp/main ./cmd/magnet-atlas"
 delay = 1000

@@ -13,7 +13,8 @@ import (
 // Config is the root runtime configuration for Magnet Atlas.
 type Config struct {
 	Server struct {
-		Listen string `yaml:"listen"`
+		Listen         string   `yaml:"listen"`
+		TorznabAPIKeys []string `yaml:"torznab_api_keys,omitempty"`
 	} `yaml:"server"`
 	Database struct {
 		Type string `yaml:"type,omitempty"`
@@ -63,6 +64,7 @@ func applyDefaults(cfg *Config) {
 	if strings.TrimSpace(cfg.Server.Listen) == "" {
 		cfg.Server.Listen = ":8080"
 	}
+	cfg.Server.TorznabAPIKeys = normalizeStrings(cfg.Server.TorznabAPIKeys)
 	if strings.TrimSpace(cfg.Database.Type) == "" {
 		cfg.Database.Type = "sqlite"
 	}
@@ -143,4 +145,21 @@ func validate(cfg *Config) error {
 		return errors.New(strings.Join(errs, "; "))
 	}
 	return nil
+}
+
+func normalizeStrings(values []string) []string {
+	out := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
 }

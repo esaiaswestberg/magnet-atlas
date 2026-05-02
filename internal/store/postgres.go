@@ -50,6 +50,7 @@ func (r *PostgresRepository) migrate(ctx context.Context) error {
 			published_at TEXT NOT NULL DEFAULT '',
 			magnet_uri TEXT NOT NULL DEFAULT '',
 			download_url TEXT NOT NULL DEFAULT '',
+			extra_text TEXT NOT NULL DEFAULT '[]',
 			search_document TSVECTOR NOT NULL DEFAULT ''::tsvector,
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL
@@ -70,6 +71,7 @@ func (r *PostgresRepository) migrate(ctx context.Context) error {
 			published_at TEXT NOT NULL DEFAULT '',
 			magnet_uri TEXT NOT NULL DEFAULT '',
 			download_url TEXT NOT NULL DEFAULT '',
+			extra_text TEXT NOT NULL DEFAULT '[]',
 			observed_at TEXT NOT NULL,
 			raw_json TEXT NOT NULL DEFAULT '',
 			PRIMARY KEY (infohash, source, source_key)
@@ -83,6 +85,8 @@ func (r *PostgresRepository) migrate(ctx context.Context) error {
 			updated_at TEXT NOT NULL,
 			PRIMARY KEY (source, section)
 		);`,
+		`ALTER TABLE torrents ADD COLUMN IF NOT EXISTS extra_text TEXT NOT NULL DEFAULT '[]';`,
+		`ALTER TABLE torrent_sources ADD COLUMN IF NOT EXISTS extra_text TEXT NOT NULL DEFAULT '[]';`,
 	}
 
 	for _, stmt := range stmts {
@@ -108,7 +112,8 @@ func (r *PostgresRepository) Upsert(ctx context.Context, torrent domain.Torrent,
 	if merged.Title == "" {
 		merged.Title = torrent.InfoHash
 	}
-	searchText := buildSearchText(merged.Title, merged.Category)
+	searchText := buildSearchText(merged.Title, merged.Category, merged.ExtraText)
+	extraText := encodeTextList(merged.ExtraText)
 
 	publishedAt := ""
 	if !merged.PublishedAt.IsZero() {
@@ -123,8 +128,8 @@ func (r *PostgresRepository) Upsert(ctx context.Context, torrent domain.Torrent,
 
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO torrents (
-			infohash, title, normalized_title, category, size_bytes, seeders, leechers, published_at, magnet_uri, download_url, search_document, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, to_tsvector('simple', $11::text), $12, $13)
+			infohash, title, normalized_title, category, size_bytes, seeders, leechers, published_at, magnet_uri, download_url, extra_text, search_document, created_at, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, to_tsvector('simple', $12::text), $13, $14)
 		ON CONFLICT (infohash) DO UPDATE SET
 			title = EXCLUDED.title,
 			normalized_title = EXCLUDED.normalized_title,
@@ -135,9 +140,10 @@ func (r *PostgresRepository) Upsert(ctx context.Context, torrent domain.Torrent,
 			published_at = EXCLUDED.published_at,
 			magnet_uri = EXCLUDED.magnet_uri,
 			download_url = EXCLUDED.download_url,
+			extra_text = EXCLUDED.extra_text,
 			search_document = EXCLUDED.search_document,
 			updated_at = EXCLUDED.updated_at`,
-		merged.InfoHash, merged.Title, normalizeTitle(merged.Title), merged.Category, merged.SizeBytes, merged.Seeders, merged.Leechers, publishedAt, merged.MagnetURI, merged.DownloadURL, searchText, now, now,
+		merged.InfoHash, merged.Title, normalizeTitle(merged.Title), merged.Category, merged.SizeBytes, merged.Seeders, merged.Leechers, publishedAt, merged.MagnetURI, merged.DownloadURL, extraText, searchText, now, now,
 	)
 	if err != nil {
 		return err
@@ -164,8 +170,8 @@ func (r *PostgresRepository) Upsert(ctx context.Context, torrent domain.Torrent,
 	}
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO torrent_sources (
-			infohash, source, source_key, source_url, title, category, size_bytes, seeders, leechers, published_at, magnet_uri, download_url, observed_at, raw_json
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+			infohash, source, source_key, source_url, title, category, size_bytes, seeders, leechers, published_at, magnet_uri, download_url, extra_text, observed_at, raw_json
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 		ON CONFLICT(infohash, source, source_key) DO UPDATE SET
 			source_url = EXCLUDED.source_url,
 			title = EXCLUDED.title,
@@ -176,9 +182,10 @@ func (r *PostgresRepository) Upsert(ctx context.Context, torrent domain.Torrent,
 			published_at = EXCLUDED.published_at,
 			magnet_uri = EXCLUDED.magnet_uri,
 			download_url = EXCLUDED.download_url,
+			extra_text = EXCLUDED.extra_text,
 			observed_at = EXCLUDED.observed_at,
 			raw_json = EXCLUDED.raw_json`,
-		merged.InfoHash, obs.Source, sourceKey, obs.SourceURL, obs.Title, obs.Category, obs.SizeBytes, obs.Seeders, obs.Leechers, obsPublishedAt, obs.MagnetURI, obs.DownloadURL, obsObservedAt, rawJSON,
+		merged.InfoHash, obs.Source, sourceKey, obs.SourceURL, obs.Title, obs.Category, obs.SizeBytes, obs.Seeders, obs.Leechers, obsPublishedAt, obs.MagnetURI, obs.DownloadURL, encodeTextList(obs.ExtraText), obsObservedAt, rawJSON,
 	)
 	if err != nil {
 		return err
@@ -198,7 +205,7 @@ func (r *PostgresRepository) Search(ctx context.Context, filter SearchFilter) ([
 	}
 
 	base := `
-		SELECT t.infohash, t.title, t.category, t.size_bytes, t.seeders, t.leechers, t.published_at, t.magnet_uri, t.download_url
+		SELECT t.infohash, t.title, t.category, t.size_bytes, t.seeders, t.leechers, t.published_at, t.magnet_uri, t.download_url, t.extra_text
 		FROM torrents t`
 	args := make([]any, 0, 4)
 	conds := []string{}
@@ -213,7 +220,17 @@ func (r *PostgresRepository) Search(ctx context.Context, filter SearchFilter) ([
 		args = append(args, filter.Source)
 		param++
 	}
-	if filter.Category != "" {
+	if len(filter.Categories) > 0 {
+		placeholders := make([]string, 0, len(filter.Categories))
+		for range filter.Categories {
+			placeholders = append(placeholders, fmt.Sprintf("$%d", param))
+			param++
+		}
+		conds = append(conds, `t.category IN (`+strings.Join(placeholders, ", ")+`)`)
+		for _, category := range filter.Categories {
+			args = append(args, category)
+		}
+	} else if filter.Category != "" {
 		conds = append(conds, fmt.Sprintf(`t.category = $%d`, param))
 		args = append(args, filter.Category)
 		param++
@@ -247,7 +264,7 @@ func (r *PostgresRepository) Get(ctx context.Context, infohash string) (Details,
 		return Details{}, err
 	}
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT source, source_key, source_url, title, category, size_bytes, seeders, leechers, published_at, magnet_uri, download_url, observed_at, raw_json
+		SELECT source, source_key, source_url, title, category, size_bytes, seeders, leechers, published_at, magnet_uri, download_url, extra_text, observed_at, raw_json
 		FROM torrent_sources
 		WHERE infohash = $1
 		ORDER BY observed_at DESC`, infohash)
@@ -259,10 +276,11 @@ func (r *PostgresRepository) Get(ctx context.Context, infohash string) (Details,
 	var sources []domain.SourceObservation
 	for rows.Next() {
 		var obs domain.SourceObservation
-		var publishedAt, observedAt string
-		if err := rows.Scan(&obs.Source, &obs.SourceID, &obs.SourceURL, &obs.Title, &obs.Category, &obs.SizeBytes, &obs.Seeders, &obs.Leechers, &publishedAt, &obs.MagnetURI, &obs.DownloadURL, &observedAt, &obs.RawJSON); err != nil {
+		var publishedAt, observedAt, extraText string
+		if err := rows.Scan(&obs.Source, &obs.SourceID, &obs.SourceURL, &obs.Title, &obs.Category, &obs.SizeBytes, &obs.Seeders, &obs.Leechers, &publishedAt, &obs.MagnetURI, &obs.DownloadURL, &extraText, &observedAt, &obs.RawJSON); err != nil {
 			return Details{}, err
 		}
+		obs.ExtraText = decodeTextList(extraText)
 		if publishedAt != "" {
 			if ts, err := time.Parse(time.RFC3339Nano, publishedAt); err == nil {
 				obs.PublishedAt = ts
@@ -305,6 +323,23 @@ func (r *PostgresRepository) ListSources(ctx context.Context) ([]string, error) 
 	return sources, rows.Err()
 }
 
+func (r *PostgresRepository) ListCategories(ctx context.Context) ([]string, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT DISTINCT category FROM torrents WHERE category <> '' ORDER BY category ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var categories []string
+	for rows.Next() {
+		var category string
+		if err := rows.Scan(&category); err != nil {
+			return nil, err
+		}
+		categories = append(categories, category)
+	}
+	return categories, rows.Err()
+}
+
 func (r *PostgresRepository) Stats(ctx context.Context) (Stats, error) {
 	var stats Stats
 	if err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM torrents`).Scan(&stats.TorrentCount); err != nil {
@@ -345,7 +380,7 @@ func (r *PostgresRepository) SetSourceState(ctx context.Context, source, section
 
 func (r *PostgresRepository) getTorrent(ctx context.Context, infohash string) (domain.Torrent, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT infohash, title, category, size_bytes, seeders, leechers, published_at, magnet_uri, download_url
+		SELECT infohash, title, category, size_bytes, seeders, leechers, published_at, magnet_uri, download_url, extra_text
 		FROM torrents
 		WHERE infohash = $1`, infohash)
 	return scanTorrent(row)
@@ -365,19 +400,4 @@ func (r *PostgresRepository) Seed(ctx context.Context, source string, torrents [
 		}
 	}
 	return nil
-}
-
-func buildSearchText(title, category string) string {
-	title = strings.TrimSpace(title)
-	category = strings.TrimSpace(category)
-	switch {
-	case title == "" && category == "":
-		return ""
-	case title == "":
-		return category
-	case category == "":
-		return title
-	default:
-		return title + " " + category
-	}
 }

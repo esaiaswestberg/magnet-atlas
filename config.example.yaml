@@ -1,5 +1,8 @@
 server:
   listen: ":8080"
+  # Optional Torznab API keys. Leave empty for public access.
+  torznab_api_keys:
+    - example-key
 
 database:
   type: sqlite

@@ -14,12 +14,19 @@ import (
 type Server struct {
 	repo        store.Repository
 	openapiSpec []byte
+	torznabKeys map[string]struct{}
 	mux         *http.ServeMux
 }
 
 // NewServer builds the HTTP routes.
-func NewServer(repo store.Repository, openapiSpec []byte) *Server {
-	s := &Server{repo: repo, openapiSpec: openapiSpec, mux: http.NewServeMux()}
+func NewServer(repo store.Repository, openapiSpec []byte, torznabAPIKeys []string) *Server {
+	keys := make(map[string]struct{}, len(torznabAPIKeys))
+	for _, key := range torznabAPIKeys {
+		if key = strings.TrimSpace(key); key != "" {
+			keys[key] = struct{}{}
+		}
+	}
+	s := &Server{repo: repo, openapiSpec: openapiSpec, torznabKeys: keys, mux: http.NewServeMux()}
 	s.routes()
 	return s
 }
@@ -35,6 +42,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/v1/sources", s.sources)
 	s.mux.HandleFunc("/v1/torrents", s.torrents)
 	s.mux.HandleFunc("/v1/torrents/", s.torrentDetails)
+	s.mux.HandleFunc("/api", s.torznab)
+	s.mux.HandleFunc("/api/", s.torznab)
 }
 
 func (s *Server) docsRedirect(w http.ResponseWriter, r *http.Request) {
@@ -171,6 +180,10 @@ func ptrGeneratedTorrent(v domain.Torrent) *Torrent {
 		tags := append([]string(nil), v.Tags...)
 		t.Tags = &tags
 	}
+	if len(v.ExtraText) > 0 {
+		extraText := append([]string(nil), v.ExtraText...)
+		t.ExtraText = &extraText
+	}
 	return &t
 }
 
@@ -215,6 +228,10 @@ func ptrGeneratedSource(v domain.SourceObservation) SourceObservation {
 	}
 	if v.DownloadURL != "" {
 		s.DownloadUrl = ptrString(v.DownloadURL)
+	}
+	if len(v.ExtraText) > 0 {
+		extraText := append([]string(nil), v.ExtraText...)
+		s.ExtraText = &extraText
 	}
 	if !v.ObservedAt.IsZero() {
 		ts := v.ObservedAt.UTC()

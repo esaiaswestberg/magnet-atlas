@@ -1,6 +1,9 @@
 package domain
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // Torrent is the canonical record served by the index and stored in the database.
 type Torrent struct {
@@ -14,6 +17,7 @@ type Torrent struct {
 	MagnetURI   string    `json:"magnet_uri,omitempty"`
 	DownloadURL string    `json:"download_url,omitempty"`
 	Tags        []string  `json:"tags,omitempty"`
+	ExtraText   []string  `json:"extra_text,omitempty"`
 }
 
 // SourceObservation stores per-source provenance for a canonical torrent.
@@ -31,6 +35,7 @@ type SourceObservation struct {
 	DownloadURL string    `json:"download_url,omitempty"`
 	ObservedAt  time.Time `json:"observed_at"`
 	RawJSON     string    `json:"raw_json,omitempty"`
+	ExtraText   []string  `json:"extra_text,omitempty"`
 }
 
 // MergeTorrent fills missing fields on dst from src and prefers richer metadata.
@@ -67,5 +72,34 @@ func MergeTorrent(dst Torrent, src Torrent) Torrent {
 	if len(dst.Tags) == 0 && len(src.Tags) > 0 {
 		dst.Tags = append([]string(nil), src.Tags...)
 	}
+	dst.ExtraText = mergeUniqueStrings(dst.ExtraText, src.ExtraText)
 	return dst
+}
+
+func mergeUniqueStrings(dst, src []string) []string {
+	seen := make(map[string]struct{}, len(dst)+len(src))
+	out := make([]string, 0, len(dst)+len(src))
+	for _, value := range dst {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	for _, value := range src {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
 }
