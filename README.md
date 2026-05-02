@@ -34,6 +34,7 @@ PostgreSQL becomes the better choice when the project needs:
 The project is organized around a small set of responsibilities:
 
 - Source adapters fetch torrent listings and metadata from individual sites.
+- RSS adapters can poll torrent feeds that already publish magnet metadata.
 - The ingestion pipeline normalizes and deduplicates incoming records.
 - The storage layer persists the canonical torrent index.
 - The query layer serves search and retrieval requests for internal consumers and future APIs.
@@ -45,6 +46,8 @@ This separation keeps source-specific behavior isolated and makes it easier to a
 Source support is configurable. The engine should not assume a fixed set of torrent sites.
 
 Each source can be enabled, disabled, or configured independently.
+
+Supported source types in v1 include `fixture`, `rss`, and `1337x`.
 
 ## Future Web UI
 

@@ -21,6 +21,10 @@ sources:
     type: fixture
     enabled: true
     fixture_path: ./testdata/sample-fixture.json
+  - name: showrss
+    type: rss
+    enabled: false
+    feed_url: https://showrss.info/rss?user=example
   - name: 1337x
     type: 1337x
     enabled: false

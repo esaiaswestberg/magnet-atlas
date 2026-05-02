@@ -20,6 +20,10 @@ sources:
     type: fixture
     enabled: true
     fixture_path: ./testdata/sample-fixture.json
+  - name: rss
+    type: rss
+    enabled: true
+    feed_url: https://example.invalid/feed.rss
   - name: 1337x
     type: 1337x
     enabled: false
@@ -41,13 +45,13 @@ sources:
 	if got, want := cfg.Database.Type, "sqlite"; got != want {
 		t.Fatalf("database type = %q, want %q", got, want)
 	}
-	if got, want := len(cfg.Sources), 2; got != want {
+	if got, want := len(cfg.Sources), 3; got != want {
 		t.Fatalf("sources len = %d, want %d", got, want)
 	}
-	if got, want := cfg.Sources[1].BaseURL, "https://www.1337xx.to"; got != want {
+	if got, want := cfg.Sources[2].BaseURL, "https://www.1337xx.to"; got != want {
 		t.Fatalf("base url = %q, want %q", got, want)
 	}
-	if got, want := cfg.Sources[1].Concurrency, 4; got != want {
+	if got, want := cfg.Sources[2].Concurrency, 4; got != want {
 		t.Fatalf("concurrency = %d, want %d", got, want)
 	}
 }
@@ -101,5 +105,26 @@ sources:
 
 	if _, err := Load(path); err == nil {
 		t.Fatal("expected mixed database config to fail")
+	}
+}
+
+func TestLoadRejectsRssSourceWithoutFeedURL(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := []byte(`
+database:
+  type: sqlite
+  path: ./magnet-atlas.db
+sources:
+  - name: rss
+    type: rss
+    enabled: true
+`)
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Load(path); err == nil {
+		t.Fatal("expected rss source without feed_url to fail")
 	}
 }

@@ -33,6 +33,7 @@ type SourceConfig struct {
 	Type         string        `yaml:"type"`
 	Enabled      bool          `yaml:"enabled"`
 	FixturePath  string        `yaml:"fixture_path,omitempty"`
+	FeedURL      string        `yaml:"feed_url,omitempty"`
 	BaseURL      string        `yaml:"base_url,omitempty"`
 	Categories   []string      `yaml:"categories,omitempty"`
 	PageWindow   int           `yaml:"page_window,omitempty"`
@@ -133,12 +134,16 @@ func validate(cfg *Config) error {
 			if strings.TrimSpace(source.FixturePath) == "" {
 				errs = append(errs, idx+".fixture_path is required for fixture sources")
 			}
+		case "rss":
+			if strings.TrimSpace(source.FeedURL) == "" {
+				errs = append(errs, idx+".feed_url is required for rss sources")
+			}
 		case "1337x":
 			if strings.TrimSpace(source.BaseURL) == "" {
 				errs = append(errs, idx+".base_url is required for 1337x sources")
 			}
 		default:
-			errs = append(errs, idx+".type must be fixture or 1337x for v1")
+			errs = append(errs, idx+".type must be fixture, rss or 1337x for v1")
 		}
 	}
 	if len(errs) > 0 {
