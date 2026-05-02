@@ -2,7 +2,13 @@ server:
   listen: ":8080"
 
 database:
+  type: sqlite
   path: "./magnet-atlas.db"
+
+# PostgreSQL example:
+# database:
+#   type: postgres
+#   url: postgres://magnet_atlas:secret@localhost:5432/magnet_atlas?sslmode=disable
 
 ingestion:
   interval: 30m

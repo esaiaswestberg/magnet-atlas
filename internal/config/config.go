@@ -16,7 +16,9 @@ type Config struct {
 		Listen string `yaml:"listen"`
 	} `yaml:"server"`
 	Database struct {
-		Path string `yaml:"path"`
+		Type string `yaml:"type,omitempty"`
+		Path string `yaml:"path,omitempty"`
+		URL  string `yaml:"url,omitempty"`
 	} `yaml:"database"`
 	Ingestion struct {
 		Interval time.Duration `yaml:"interval"`
@@ -61,7 +63,16 @@ func applyDefaults(cfg *Config) {
 	if strings.TrimSpace(cfg.Server.Listen) == "" {
 		cfg.Server.Listen = ":8080"
 	}
-	if strings.TrimSpace(cfg.Database.Path) == "" {
+	if strings.TrimSpace(cfg.Database.Type) == "" {
+		cfg.Database.Type = "sqlite"
+	}
+	switch strings.ToLower(strings.TrimSpace(cfg.Database.Type)) {
+	case "postgresql":
+		cfg.Database.Type = "postgres"
+	case "sqlite", "postgres":
+		cfg.Database.Type = strings.ToLower(strings.TrimSpace(cfg.Database.Type))
+	}
+	if cfg.Database.Type == "sqlite" && strings.TrimSpace(cfg.Database.Path) == "" {
 		cfg.Database.Path = "./magnet-atlas.db"
 	}
 	for i := range cfg.Sources {
@@ -83,7 +94,24 @@ func validate(cfg *Config) error {
 		errs = append(errs, "server.listen is required")
 	}
 	if cfg.Database.Path == "" {
-		errs = append(errs, "database.path is required")
+		if cfg.Database.Type == "sqlite" {
+			errs = append(errs, "database.path is required for sqlite")
+		}
+	}
+	switch cfg.Database.Type {
+	case "sqlite":
+		if strings.TrimSpace(cfg.Database.URL) != "" {
+			errs = append(errs, "database.url must be empty for sqlite")
+		}
+	case "postgres":
+		if strings.TrimSpace(cfg.Database.URL) == "" {
+			errs = append(errs, "database.url is required for postgres")
+		}
+		if strings.TrimSpace(cfg.Database.Path) != "" {
+			errs = append(errs, "database.path must be empty for postgres")
+		}
+	default:
+		errs = append(errs, "database.type must be sqlite or postgres")
 	}
 	seen := map[string]struct{}{}
 	for i, source := range cfg.Sources {

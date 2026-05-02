@@ -57,7 +57,11 @@ func run(ctx context.Context, configPath string, ingestOnce bool, logger *slog.L
 		return fmt.Errorf("load config: %w", err)
 	}
 
-	repo, err := store.OpenSQLite(cfg.Database.Path)
+	repo, err := store.Open(store.Options{
+		Type: cfg.Database.Type,
+		Path: cfg.Database.Path,
+		URL:  cfg.Database.URL,
+	})
 	if err != nil {
 		return fmt.Errorf("open store: %w", err)
 	}

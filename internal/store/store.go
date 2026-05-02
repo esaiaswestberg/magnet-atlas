@@ -3,11 +3,19 @@ package store
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/esaiaswestberg/magnet-atlas/internal/domain"
 )
 
 var ErrSourceStateNotFound = errors.New("source state not found")
+
+// Options select the storage backend and its connection settings.
+type Options struct {
+	Type string
+	Path string
+	URL  string
+}
 
 // SearchFilter narrows torrent search results.
 type SearchFilter struct {
@@ -42,4 +50,20 @@ type Repository interface {
 	Stats(ctx context.Context) (Stats, error)
 	GetSourceState(ctx context.Context, source, section string) (string, error)
 	SetSourceState(ctx context.Context, source, section, state string) error
+}
+
+// Open builds the requested storage backend.
+func Open(opts Options) (Repository, error) {
+	switch normalizeType(opts.Type) {
+	case "", "sqlite":
+		return OpenSQLite(opts.Path)
+	case "postgres", "postgresql":
+		return OpenPostgres(opts.URL)
+	default:
+		return nil, errors.New("unsupported database type")
+	}
+}
+
+func normalizeType(v string) string {
+	return strings.ToLower(strings.TrimSpace(v))
 }

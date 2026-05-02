@@ -14,6 +14,7 @@ It is designed to ingest metadata from configurable torrent sources, normalize t
 ## Storage
 
 Magnet Atlas is intended to support either SQLite or PostgreSQL.
+Choose the backend explicitly with `database.type: sqlite` or `database.type: postgres`, then provide `database.path` or `database.url` accordingly.
 
 For the first version, SQLite is the best default fit:
 
@@ -61,12 +62,10 @@ This keeps presentation concerns separate from ingestion and allows the backend 
 
 - Initial Go implementation of the ingestion pipeline.
 - Configurable source adapters.
-- SQLite-backed persistence for the first working version.
-- PostgreSQL support for larger deployments.
+- SQLite-backed persistence and PostgreSQL backend support.
 - Search and filtering endpoints for downstream consumers.
 - Web UI built on top of the backend layer.
 
 ## Project Layout
 
 Expected repository naming and file references may use `magnet-atlas` where a filename-safe form is needed.
-
