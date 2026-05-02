@@ -39,21 +39,46 @@ func New(cfg *config.Config, repo store.Repository, logger *slog.Logger) (*App, 
 
 // IngestOnce runs one pass over the enabled adapters.
 func (a *App) IngestOnce(ctx context.Context) error {
+	totalTorrents := 0
+	totalObservations := 0
 	for _, adapter := range a.servers {
-		torrents, observations, err := adapter.Fetch(ctx)
+		start := time.Now()
+		if a.logger != nil {
+			a.logger.Debug("fetching source", "source", adapter.Name())
+		}
+		result, err := adapter.Fetch(ctx, a.repo)
 		if err != nil {
 			return fmt.Errorf("adapter %q: %w", adapter.Name(), err)
 		}
-		for i := range torrents {
+		if a.logger != nil {
+			a.logger.Debug("source fetched", "source", adapter.Name(), "torrents", len(result.Torrents), "observations", len(result.Observations), "duration", time.Since(start))
+		}
+		for i := range result.Torrents {
 			obs := domain.SourceObservation{}
-			if i < len(observations) {
-				obs = observations[i]
+			if i < len(result.Observations) {
+				obs = result.Observations[i]
 			}
 			obs.Source = adapter.Name()
-			if err := a.repo.Upsert(ctx, torrents[i], obs); err != nil {
-				return fmt.Errorf("upsert %q: %w", torrents[i].InfoHash, err)
+			if a.logger != nil {
+				a.logger.Debug("upserting torrent", "source", adapter.Name(), "infohash", result.Torrents[i].InfoHash, "title", result.Torrents[i].Title)
+			}
+			if err := a.repo.Upsert(ctx, result.Torrents[i], obs); err != nil {
+				return fmt.Errorf("upsert %q: %w", result.Torrents[i].InfoHash, err)
+			}
+			totalTorrents++
+			totalObservations++
+		}
+		for section, state := range result.State {
+			if state == "" {
+				continue
+			}
+			if err := a.repo.SetSourceState(ctx, adapter.Name(), section, state); err != nil {
+				return fmt.Errorf("persist source state %q/%q: %w", adapter.Name(), section, err)
 			}
 		}
+	}
+	if a.logger != nil {
+		a.logger.Info("ingest pass complete", "torrents", totalTorrents, "observations", totalObservations)
 	}
 	return nil
 }

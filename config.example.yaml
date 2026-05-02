@@ -16,3 +16,9 @@ sources:
     type: 1337x
     enabled: false
     base_url: https://www.1337xx.to
+    categories:
+      - movies
+      - tv
+    page_window: 20
+    concurrency: 4
+    request_delay: 1s

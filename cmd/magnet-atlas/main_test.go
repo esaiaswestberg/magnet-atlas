@@ -1,9 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"io"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,9 +37,13 @@ sources:
 		t.Fatal(err)
 	}
 
-	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	var logs bytes.Buffer
+	logger := newLogger(false, &logs)
 	if err := run(context.Background(), configPath, true, logger); err != nil {
 		t.Fatal(err)
+	}
+	if !strings.Contains(logs.String(), "one-shot ingest complete") {
+		t.Fatalf("missing completion log: %s", logs.String())
 	}
 
 	repo, err := store.OpenSQLite(dbPath)
@@ -54,6 +58,22 @@ sources:
 	}
 	if got, want := stats.TorrentCount, int64(2); got != want {
 		t.Fatalf("torrent count = %d, want %d", got, want)
+	}
+}
+
+func TestNewLoggerVerboseControlsDebug(t *testing.T) {
+	var quiet bytes.Buffer
+	quietLogger := newLogger(false, &quiet)
+	quietLogger.Debug("debug message")
+	if strings.Contains(quiet.String(), "debug message") {
+		t.Fatalf("debug message should not be logged without --verbose: %s", quiet.String())
+	}
+
+	var verbose bytes.Buffer
+	verboseLogger := newLogger(true, &verbose)
+	verboseLogger.Debug("debug message")
+	if !strings.Contains(verbose.String(), "debug message") {
+		t.Fatalf("debug message should be logged with --verbose: %s", verbose.String())
 	}
 }
 
@@ -78,7 +98,7 @@ sources:
 		t.Fatal(err)
 	}
 
-	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	logger := newLogger(false, io.Discard)
 	if err := run(context.Background(), configPath, true, logger); err == nil {
 		t.Fatal("expected ingest error")
 	}

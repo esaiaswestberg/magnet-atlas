@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/esaiaswestberg/magnet-atlas/internal/config"
 	"github.com/esaiaswestberg/magnet-atlas/internal/domain"
+	"github.com/esaiaswestberg/magnet-atlas/internal/store"
 )
 
 const default1337XBaseURL = "https://www.1337xx.to"
@@ -38,8 +40,12 @@ type x1337Adapter struct {
 	baseURL     *url.URL
 	client      *http.Client
 	concurrency int
-	maxPages    int
+	pageWindow  int
 	seeds       []crawlSeed
+}
+
+type crawlState struct {
+	WindowEndPage int `json:"window_end_page"`
 }
 
 type crawlSeed struct {
@@ -57,6 +63,11 @@ type listingItem struct {
 type torrentRecord struct {
 	torrent domain.Torrent
 	obs     domain.SourceObservation
+}
+
+type pageRecord struct {
+	record torrentRecord
+	known  bool
 }
 
 // New1337XAdapter creates an adapter for the public 1337x browse pages.
@@ -87,57 +98,168 @@ func New1337XAdapter(cfg config.SourceConfig) (*x1337Adapter, error) {
 	if concurrency <= 0 {
 		concurrency = 4
 	}
-	client := &http.Client{Timeout: 30 * time.Second}
+	pageWindow := cfg.PageWindow
+	if pageWindow <= 0 {
+		pageWindow = cfg.MaxPages
+	}
+	if pageWindow <= 0 {
+		pageWindow = 20
+	}
 
 	return &x1337Adapter{
 		name:        cfg.Name,
 		baseURL:     baseURL,
-		client:      client,
+		client:      &http.Client{Timeout: 30 * time.Second},
 		concurrency: concurrency,
-		maxPages:    cfg.MaxPages,
+		pageWindow:  pageWindow,
 		seeds:       seeds,
 	}, nil
 }
 
 func (a *x1337Adapter) Name() string { return a.name }
 
-func (a *x1337Adapter) Fetch(ctx context.Context) ([]domain.Torrent, []domain.SourceObservation, error) {
-	seen := make(map[string]struct{})
-	torrents := make([]domain.Torrent, 0, 256)
-	observations := make([]domain.SourceObservation, 0, 256)
-
-	for _, seed := range a.seeds {
-		for page := 1; a.maxPages <= 0 || page <= a.maxPages; page++ {
-			listingURL := a.pageURL(seed.path, page)
-			items, err := a.fetchListingPage(ctx, listingURL, seed.name)
-			if err != nil {
-				if page == 1 {
-					return nil, nil, err
-				}
-				break
-			}
-			if len(items) == 0 {
-				break
-			}
-			records := a.fetchDetails(ctx, items)
-			for _, record := range records {
-				if record.torrent.InfoHash == "" {
-					continue
-				}
-				if _, ok := seen[record.torrent.InfoHash]; ok {
-					continue
-				}
-				seen[record.torrent.InfoHash] = struct{}{}
-				torrents = append(torrents, record.torrent)
-				observations = append(observations, record.obs)
-			}
-		}
+func (a *x1337Adapter) Fetch(ctx context.Context, repo store.Repository) (FetchResult, error) {
+	if repo == nil {
+		return FetchResult{}, fmt.Errorf("repository is required")
 	}
 
-	return torrents, observations, nil
+	var out FetchResult
+	out.State = make(map[string]string)
+
+	for _, seed := range a.seeds {
+		state, err := a.loadState(ctx, repo, seed.name)
+		if err != nil {
+			return FetchResult{}, err
+		}
+
+		if slog.Default().Enabled(ctx, slog.LevelDebug) {
+			slog.Debug("starting source crawl", "source", a.name, "section", seed.name, "path", seed.path, "state", state.WindowEndPage)
+		}
+
+		var sectionTorrents []domain.Torrent
+		var sectionObservations []domain.SourceObservation
+		var nextState int
+
+		if state.WindowEndPage <= 0 {
+			res, lastPage, err := a.fetchWindow(ctx, repo, seed, 1, a.pageWindow)
+			if err != nil {
+				return FetchResult{}, err
+			}
+			sectionTorrents = append(sectionTorrents, res.Torrents...)
+			sectionObservations = append(sectionObservations, res.Observations...)
+			nextState = lastPage
+		} else {
+			probeRes, probePages, err := a.probeFrontier(ctx, repo, seed, a.pageWindow)
+			if err != nil {
+				return FetchResult{}, err
+			}
+			sectionTorrents = append(sectionTorrents, probeRes.Torrents...)
+			sectionObservations = append(sectionObservations, probeRes.Observations...)
+
+			start := state.WindowEndPage + probePages + 1
+			windowRes, lastPage, err := a.fetchWindow(ctx, repo, seed, start, a.pageWindow)
+			if err != nil {
+				return FetchResult{}, err
+			}
+			sectionTorrents = append(sectionTorrents, windowRes.Torrents...)
+			sectionObservations = append(sectionObservations, windowRes.Observations...)
+			nextState = lastPage
+		}
+
+		if nextState > 0 {
+			out.State[seed.name] = encodeState(crawlState{WindowEndPage: nextState})
+		}
+		out.Torrents = append(out.Torrents, sectionTorrents...)
+		out.Observations = append(out.Observations, sectionObservations...)
+	}
+
+	return out, nil
 }
 
-func (a *x1337Adapter) fetchListingPage(ctx context.Context, pageURL string, category string) ([]listingItem, error) {
+func (a *x1337Adapter) probeFrontier(ctx context.Context, repo store.Repository, seed crawlSeed, limit int) (FetchResult, int, error) {
+	var out FetchResult
+	pagesBeforeBoundary := 0
+	for page := 1; page <= limit; page++ {
+		records, empty, foundKnown, err := a.collectPage(ctx, repo, seed, page)
+		if err != nil {
+			return FetchResult{}, 0, err
+		}
+		if empty {
+			return out, pagesBeforeBoundary, nil
+		}
+		if foundKnown {
+			if slog.Default().Enabled(ctx, slog.LevelDebug) {
+				slog.Debug("frontier reached", "source", a.name, "section", seed.name, "page", page)
+			}
+			return out, pagesBeforeBoundary, nil
+		}
+		for _, record := range records {
+			out.Torrents = append(out.Torrents, record.record.torrent)
+			out.Observations = append(out.Observations, record.record.obs)
+		}
+		pagesBeforeBoundary = page
+	}
+	return out, pagesBeforeBoundary, nil
+}
+
+func (a *x1337Adapter) fetchWindow(ctx context.Context, repo store.Repository, seed crawlSeed, startPage, limit int) (FetchResult, int, error) {
+	var out FetchResult
+	lastPage := 0
+	for page := startPage; page < startPage+limit; page++ {
+		if slog.Default().Enabled(ctx, slog.LevelDebug) {
+			slog.Debug("fetching window page", "source", a.name, "section", seed.name, "page", page)
+		}
+		records, empty, _, err := a.collectPage(ctx, repo, seed, page)
+		if err != nil {
+			return FetchResult{}, 0, err
+		}
+		if empty {
+			break
+		}
+		for _, record := range records {
+			if record.known {
+				continue
+			}
+			out.Torrents = append(out.Torrents, record.record.torrent)
+			out.Observations = append(out.Observations, record.record.obs)
+		}
+		lastPage = page
+	}
+	return out, lastPage, nil
+}
+
+func (a *x1337Adapter) collectPage(ctx context.Context, repo store.Repository, seed crawlSeed, page int) ([]pageRecord, bool, bool, error) {
+	listingURL := a.pageURL(seed.path, page)
+	if slog.Default().Enabled(ctx, slog.LevelDebug) {
+		slog.Debug("fetching listing page", "source", a.name, "section", seed.name, "page", page, "url", listingURL)
+	}
+	items, err := a.fetchListingPage(ctx, listingURL, seed.name)
+	if err != nil {
+		return nil, false, false, err
+	}
+	if len(items) == 0 {
+		return nil, true, false, nil
+	}
+	records := a.fetchDetails(ctx, items)
+	out := make([]pageRecord, 0, len(records))
+	foundKnown := false
+	for _, rec := range records {
+		if rec.torrent.InfoHash == "" {
+			continue
+		}
+		known, err := repo.HasInfohash(ctx, rec.torrent.InfoHash)
+		if err != nil {
+			return nil, false, false, err
+		}
+		if known {
+			foundKnown = true
+		}
+		out = append(out, pageRecord{record: rec, known: known})
+	}
+	return out, false, foundKnown, nil
+}
+
+func (a *x1337Adapter) fetchListingPage(ctx context.Context, pageURL string, section string) ([]listingItem, error) {
 	body, status, err := a.get(ctx, pageURL)
 	if err != nil {
 		return nil, err
@@ -160,7 +282,7 @@ func (a *x1337Adapter) fetchListingPage(ctx context.Context, pageURL string, cat
 			id:       match[2],
 			title:    title,
 			url:      a.resolve(match[1]),
-			category: category,
+			category: section,
 		})
 	}
 	return items, nil
@@ -186,8 +308,10 @@ func (a *x1337Adapter) fetchDetails(ctx context.Context, items []listingItem) []
 			defer func() { <-sem }()
 
 			item := items[i]
+			slog.Debug("fetching detail page", "source", a.name, "item_id", item.id, "url", item.url)
 			detail, err := a.fetchDetail(ctx, item)
 			if err != nil {
+				slog.Debug("detail page failed", "source", a.name, "item_id", item.id, "url", item.url, "error", err)
 				return
 			}
 			out[i] = detail
@@ -285,6 +409,7 @@ func (a *x1337Adapter) fetchDetail(ctx context.Context, item listingItem) (torre
 }
 
 func (a *x1337Adapter) get(ctx context.Context, pageURL string) (string, int, error) {
+	start := time.Now()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, pageURL, nil)
 	if err != nil {
 		return "", 0, err
@@ -301,7 +426,35 @@ func (a *x1337Adapter) get(ctx context.Context, pageURL string) (string, int, er
 	if err != nil {
 		return "", resp.StatusCode, err
 	}
+	slog.Debug("fetched http response", "url", pageURL, "status", resp.StatusCode, "bytes", len(b), "duration", time.Since(start))
 	return string(b), resp.StatusCode, nil
+}
+
+func (a *x1337Adapter) loadState(ctx context.Context, repo store.Repository, section string) (crawlState, error) {
+	state, err := repo.GetSourceState(ctx, a.name, section)
+	if errors.Is(err, store.ErrSourceStateNotFound) {
+		return crawlState{}, nil
+	}
+	if err != nil {
+		return crawlState{}, err
+	}
+	return decodeState(state)
+}
+
+func encodeState(state crawlState) string {
+	b, _ := json.Marshal(state)
+	return string(b)
+}
+
+func decodeState(raw string) (crawlState, error) {
+	var state crawlState
+	if strings.TrimSpace(raw) == "" {
+		return state, nil
+	}
+	if err := json.Unmarshal([]byte(raw), &state); err != nil {
+		return crawlState{}, err
+	}
+	return state, nil
 }
 
 func (a *x1337Adapter) pageURL(seedPath string, page int) string {

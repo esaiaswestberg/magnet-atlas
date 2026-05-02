@@ -2,9 +2,12 @@ package store
 
 import (
 	"context"
+	"errors"
 
 	"github.com/esaiaswestberg/magnet-atlas/internal/domain"
 )
+
+var ErrSourceStateNotFound = errors.New("source state not found")
 
 // SearchFilter narrows torrent search results.
 type SearchFilter struct {
@@ -34,6 +37,9 @@ type Repository interface {
 	Upsert(ctx context.Context, torrent domain.Torrent, obs domain.SourceObservation) error
 	Search(ctx context.Context, filter SearchFilter) ([]domain.Torrent, error)
 	Get(ctx context.Context, infohash string) (Details, error)
+	HasInfohash(ctx context.Context, infohash string) (bool, error)
 	ListSources(ctx context.Context) ([]string, error)
 	Stats(ctx context.Context) (Stats, error)
+	GetSourceState(ctx context.Context, source, section string) (string, error)
+	SetSourceState(ctx context.Context, source, section, state string) error
 }

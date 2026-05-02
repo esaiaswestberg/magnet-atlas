@@ -9,6 +9,7 @@ import (
 
 	"github.com/esaiaswestberg/magnet-atlas/internal/config"
 	"github.com/esaiaswestberg/magnet-atlas/internal/domain"
+	"github.com/esaiaswestberg/magnet-atlas/internal/store"
 )
 
 // FixtureAdapter replays torrents from a local JSON fixture.
@@ -27,21 +28,21 @@ func NewFixtureAdapter(cfg config.SourceConfig) (*FixtureAdapter, error) {
 
 func (a *FixtureAdapter) Name() string { return a.name }
 
-func (a *FixtureAdapter) Fetch(ctx context.Context) ([]domain.Torrent, []domain.SourceObservation, error) {
+func (a *FixtureAdapter) Fetch(ctx context.Context, _ store.Repository) (FetchResult, error) {
 	select {
 	case <-ctx.Done():
-		return nil, nil, ctx.Err()
+		return FetchResult{}, ctx.Err()
 	default:
 	}
 
 	b, err := os.ReadFile(a.fixturePath)
 	if err != nil {
-		return nil, nil, err
+		return FetchResult{}, err
 	}
 
 	var payload []fixtureTorrent
 	if err := json.Unmarshal(b, &payload); err != nil {
-		return nil, nil, err
+		return FetchResult{}, err
 	}
 
 	torrents := make([]domain.Torrent, 0, len(payload))
@@ -66,7 +67,7 @@ func (a *FixtureAdapter) Fetch(ctx context.Context) ([]domain.Torrent, []domain.
 		})
 	}
 
-	return torrents, observations, nil
+	return FetchResult{Torrents: torrents, Observations: observations}, nil
 }
 
 type fixtureTorrent struct {

@@ -30,20 +30,20 @@ func TestFixtureAdapterFetch(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	torrents, obs, err := adapter.Fetch(context.Background())
+	result, err := adapter.Fetch(context.Background(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := len(torrents), 2; got != want {
+	if got, want := len(result.Torrents), 2; got != want {
 		t.Fatalf("torrents len = %d, want %d", got, want)
 	}
-	if got, want := len(obs), 2; got != want {
+	if got, want := len(result.Observations), 2; got != want {
 		t.Fatalf("observations len = %d, want %d", got, want)
 	}
-	if got, want := torrents[0].InfoHash, "0123456789abcdef0123456789abcdef01234567"; got != want {
+	if got, want := result.Torrents[0].InfoHash, "0123456789abcdef0123456789abcdef01234567"; got != want {
 		t.Fatalf("infohash = %q, want %q", got, want)
 	}
-	if got, want := obs[0].Source, "sample"; got != want {
+	if got, want := result.Observations[0].Source, "sample"; got != want {
 		t.Fatalf("source = %q, want %q", got, want)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -20,11 +21,14 @@ import (
 func main() {
 	var configPath string
 	var ingestOnce bool
+	var verbose bool
 	flag.StringVar(&configPath, "config", "config.yaml", "path to the YAML configuration file")
 	flag.BoolVar(&ingestOnce, "ingest-once", false, "run a single ingestion pass and exit")
+	flag.BoolVar(&verbose, "verbose", false, "enable debug logging")
 	flag.Parse()
 
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	logger := newLogger(verbose, os.Stdout)
+	slog.SetDefault(logger)
 
 	ctx := context.Background()
 	var stop func()
@@ -37,6 +41,14 @@ func main() {
 		logger.Error("runtime error", "error", err)
 		os.Exit(1)
 	}
+}
+
+func newLogger(verbose bool, w io.Writer) *slog.Logger {
+	level := slog.LevelInfo
+	if verbose {
+		level = slog.LevelDebug
+	}
+	return slog.New(slog.NewJSONHandler(w, &slog.HandlerOptions{Level: level}))
 }
 
 func run(ctx context.Context, configPath string, ingestOnce bool, logger *slog.Logger) error {
@@ -61,6 +73,7 @@ func run(ctx context.Context, configPath string, ingestOnce bool, logger *slog.L
 		if err := daemon.IngestOnce(ctx); err != nil {
 			return err
 		}
+		logger.Info("one-shot ingest complete")
 		return nil
 	}
 

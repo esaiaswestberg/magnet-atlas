@@ -25,8 +25,13 @@ func (f fakeRepo) Search(context.Context, store.SearchFilter) ([]domain.Torrent,
 	return f.items, nil
 }
 func (f fakeRepo) Get(context.Context, string) (store.Details, error) { return f.detail, nil }
+func (f fakeRepo) HasInfohash(context.Context, string) (bool, error)   { return false, nil }
 func (f fakeRepo) ListSources(context.Context) ([]string, error)      { return f.sources, nil }
 func (f fakeRepo) Stats(context.Context) (store.Stats, error)         { return f.stats, nil }
+func (f fakeRepo) GetSourceState(context.Context, string, string) (string, error) {
+	return "", store.ErrSourceStateNotFound
+}
+func (f fakeRepo) SetSourceState(context.Context, string, string, string) error { return nil }
 
 func TestStatusEndpoint(t *testing.T) {
 	srv := NewServer(fakeRepo{stats: store.Stats{TorrentCount: 12, SourceCount: 3}}, []byte("openapi: 3.1.0\n"))

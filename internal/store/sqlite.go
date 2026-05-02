@@ -62,7 +62,7 @@ func (r *SQLiteRepository) migrate(ctx context.Context) error {
 			category,
 			content=''
 		);`,
-		`CREATE TABLE IF NOT EXISTS torrent_sources (
+	`CREATE TABLE IF NOT EXISTS torrent_sources (
 			infohash TEXT NOT NULL,
 			source TEXT NOT NULL,
 			source_key TEXT NOT NULL,
@@ -78,6 +78,13 @@ func (r *SQLiteRepository) migrate(ctx context.Context) error {
 			observed_at TEXT NOT NULL,
 			raw_json TEXT NOT NULL DEFAULT '',
 			PRIMARY KEY (infohash, source, source_key)
+		);`,
+		`CREATE TABLE IF NOT EXISTS source_state (
+			source TEXT NOT NULL,
+			section TEXT NOT NULL,
+			state TEXT NOT NULL,
+			updated_at TEXT NOT NULL,
+			PRIMARY KEY (source, section)
 		);`,
 		`CREATE TRIGGER IF NOT EXISTS torrents_ai AFTER INSERT ON torrents BEGIN
 			INSERT INTO torrents_fts(rowid, infohash, title, category) VALUES (new.id, new.infohash, new.title, new.category);
@@ -288,6 +295,18 @@ func (r *SQLiteRepository) Get(ctx context.Context, infohash string) (Details, e
 	return Details{Torrent: t, Sources: sources}, rows.Err()
 }
 
+func (r *SQLiteRepository) HasInfohash(ctx context.Context, infohash string) (bool, error) {
+	var found int
+	err := r.db.QueryRowContext(ctx, `SELECT 1 FROM torrents WHERE infohash = ? LIMIT 1`, infohash).Scan(&found)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 func (r *SQLiteRepository) ListSources(ctx context.Context) ([]string, error) {
 	rows, err := r.db.QueryContext(ctx, `SELECT DISTINCT source FROM torrent_sources ORDER BY source ASC`)
 	if err != nil {
@@ -317,6 +336,30 @@ func (r *SQLiteRepository) Stats(ctx context.Context) (Stats, error) {
 		return Stats{}, err
 	}
 	return stats, nil
+}
+
+func (r *SQLiteRepository) GetSourceState(ctx context.Context, source, section string) (string, error) {
+	var state string
+	err := r.db.QueryRowContext(ctx, `SELECT state FROM source_state WHERE source = ? AND section = ?`, source, section).Scan(&state)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrSourceStateNotFound
+	}
+	if err != nil {
+		return "", err
+	}
+	return state, nil
+}
+
+func (r *SQLiteRepository) SetSourceState(ctx context.Context, source, section, state string) error {
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO source_state (source, section, state, updated_at)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT(source, section) DO UPDATE SET
+			state = excluded.state,
+			updated_at = excluded.updated_at`,
+		source, section, state, time.Now().UTC().Format(time.RFC3339Nano),
+	)
+	return err
 }
 
 func (r *SQLiteRepository) getTorrent(ctx context.Context, infohash string) (domain.Torrent, error) {

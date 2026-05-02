@@ -32,6 +32,7 @@ type SourceConfig struct {
 	FixturePath  string        `yaml:"fixture_path,omitempty"`
 	BaseURL      string        `yaml:"base_url,omitempty"`
 	Categories   []string      `yaml:"categories,omitempty"`
+	PageWindow   int           `yaml:"page_window,omitempty"`
 	MaxPages     int           `yaml:"max_pages,omitempty"`
 	Concurrency  int           `yaml:"concurrency,omitempty"`
 	RequestDelay time.Duration `yaml:"request_delay,omitempty"`
@@ -69,6 +70,9 @@ func applyDefaults(cfg *Config) {
 		}
 		if cfg.Sources[i].Type == "1337x" && cfg.Sources[i].Concurrency <= 0 {
 			cfg.Sources[i].Concurrency = 4
+		}
+		if cfg.Sources[i].Type == "1337x" && cfg.Sources[i].PageWindow <= 0 && cfg.Sources[i].MaxPages > 0 {
+			cfg.Sources[i].PageWindow = cfg.Sources[i].MaxPages
 		}
 	}
 }

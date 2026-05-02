@@ -68,4 +68,15 @@ func TestSQLiteRepositoryRoundTrip(t *testing.T) {
 	if got, want := stats.TorrentCount, int64(1); got != want {
 		t.Fatalf("torrent count = %d, want %d", got, want)
 	}
+
+	if err := repo.SetSourceState(context.Background(), "1337x", "movies", `{"window_end_page":20}`); err != nil {
+		t.Fatal(err)
+	}
+	state, err := repo.GetSourceState(context.Background(), "1337x", "movies")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := state, `{"window_end_page":20}`; got != want {
+		t.Fatalf("source state = %q, want %q", got, want)
+	}
 }
