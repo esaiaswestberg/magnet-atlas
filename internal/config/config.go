@@ -35,6 +35,7 @@ type SourceConfig struct {
 	FixturePath  string        `yaml:"fixture_path,omitempty"`
 	FeedURL      string        `yaml:"feed_url,omitempty"`
 	BaseURL      string        `yaml:"base_url,omitempty"`
+	ReleasePaths []string      `yaml:"release_paths,omitempty"`
 	Categories   []string      `yaml:"categories,omitempty"`
 	PageWindow   int           `yaml:"page_window,omitempty"`
 	MaxPages     int           `yaml:"max_pages,omitempty"`
@@ -85,10 +86,16 @@ func applyDefaults(cfg *Config) {
 		if strings.TrimSpace(cfg.Sources[i].BaseURL) == "" && cfg.Sources[i].Type == "uindex" {
 			cfg.Sources[i].BaseURL = "https://uindex.org"
 		}
+		if strings.TrimSpace(cfg.Sources[i].BaseURL) == "" && cfg.Sources[i].Type == "linux-releases" {
+			cfg.Sources[i].BaseURL = "https://releases.ubuntu.com/"
+		}
 		if cfg.Sources[i].Type == "1337x" && cfg.Sources[i].Concurrency <= 0 {
 			cfg.Sources[i].Concurrency = 4
 		}
 		if cfg.Sources[i].Type == "uindex" && cfg.Sources[i].Concurrency <= 0 {
+			cfg.Sources[i].Concurrency = 4
+		}
+		if cfg.Sources[i].Type == "linux-releases" && cfg.Sources[i].Concurrency <= 0 {
 			cfg.Sources[i].Concurrency = 4
 		}
 		if cfg.Sources[i].Type == "1337x" && cfg.Sources[i].PageWindow <= 0 && cfg.Sources[i].MaxPages > 0 {
@@ -161,8 +168,12 @@ func validate(cfg *Config) error {
 					break
 				}
 			}
+		case "linux-releases":
+			if strings.TrimSpace(source.BaseURL) == "" {
+				errs = append(errs, idx+".base_url is required for linux-releases sources")
+			}
 		default:
-			errs = append(errs, idx+".type must be fixture, rss, 1337x or uindex for v1")
+			errs = append(errs, idx+".type must be fixture, rss, 1337x, uindex or linux-releases for v1")
 		}
 	}
 	if len(errs) > 0 {

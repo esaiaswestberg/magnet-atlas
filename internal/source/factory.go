@@ -18,6 +18,8 @@ func NewFactory() Factory {
 			return New1337XAdapter(cfg)
 		case "uindex":
 			return NewUIndexAdapter(cfg)
+		case "linux-releases":
+			return NewLinuxReleasesAdapter(cfg)
 		default:
 			return nil, fmt.Errorf("unsupported source type %q", cfg.Type)
 		}

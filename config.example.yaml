@@ -44,3 +44,7 @@ sources:
       - tv
     page_window: 20
     concurrency: 4
+  - name: ubuntu-releases
+    type: linux-releases
+    enabled: false
+    base_url: https://releases.ubuntu.com/

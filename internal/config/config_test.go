@@ -30,6 +30,9 @@ sources:
   - name: uindex
     type: uindex
     enabled: false
+  - name: linux
+    type: linux-releases
+    enabled: false
 `)
 	if err := os.WriteFile(path, content, 0o600); err != nil {
 		t.Fatal(err)
@@ -48,7 +51,7 @@ sources:
 	if got, want := cfg.Database.Type, "sqlite"; got != want {
 		t.Fatalf("database type = %q, want %q", got, want)
 	}
-	if got, want := len(cfg.Sources), 4; got != want {
+	if got, want := len(cfg.Sources), 5; got != want {
 		t.Fatalf("sources len = %d, want %d", got, want)
 	}
 	if got, want := cfg.Sources[2].BaseURL, "https://www.1337xx.to"; got != want {
@@ -62,6 +65,12 @@ sources:
 	}
 	if got, want := cfg.Sources[3].Concurrency, 4; got != want {
 		t.Fatalf("uindex concurrency = %d, want %d", got, want)
+	}
+	if got, want := cfg.Sources[4].BaseURL, "https://releases.ubuntu.com/"; got != want {
+		t.Fatalf("linux releases base url = %q, want %q", got, want)
+	}
+	if got, want := cfg.Sources[4].Concurrency, 4; got != want {
+		t.Fatalf("linux releases concurrency = %d, want %d", got, want)
 	}
 }
 
