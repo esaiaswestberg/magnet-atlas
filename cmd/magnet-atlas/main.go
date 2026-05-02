@@ -36,13 +36,19 @@ func main() {
 	}
 	defer repo.Close()
 
+	openAPISpec, err := os.ReadFile("api/openapi.yaml")
+	if err != nil {
+		logger.Error("read openapi spec", "error", err)
+		os.Exit(1)
+	}
+
 	daemon, err := app.New(cfg, repo, logger)
 	if err != nil {
 		logger.Error("build app", "error", err)
 		os.Exit(1)
 	}
 
-	server := api.NewServer(repo)
+	server := api.NewServer(repo, openAPISpec)
 	httpServer := &http.Server{
 		Addr:              cfg.Server.Listen,
 		Handler:           server.Handler(),

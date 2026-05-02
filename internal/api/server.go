@@ -12,13 +12,14 @@ import (
 
 // Server exposes the HTTP API over a Repository.
 type Server struct {
-	repo store.Repository
-	mux  *http.ServeMux
+	repo        store.Repository
+	openapiSpec []byte
+	mux         *http.ServeMux
 }
 
 // NewServer builds the HTTP routes.
-func NewServer(repo store.Repository) *Server {
-	s := &Server{repo: repo, mux: http.NewServeMux()}
+func NewServer(repo store.Repository, openapiSpec []byte) *Server {
+	s := &Server{repo: repo, openapiSpec: openapiSpec, mux: http.NewServeMux()}
 	s.routes()
 	return s
 }
@@ -26,11 +27,18 @@ func NewServer(repo store.Repository) *Server {
 func (s *Server) Handler() http.Handler { return s.mux }
 
 func (s *Server) routes() {
+	s.mux.HandleFunc("/v1", s.docsRedirect)
+	s.mux.HandleFunc("/v1/", s.docs)
+	s.mux.HandleFunc("/v1/openapi.yaml", s.openAPISpec)
 	s.mux.HandleFunc("/healthz", s.healthz)
 	s.mux.HandleFunc("/v1/status", s.status)
 	s.mux.HandleFunc("/v1/sources", s.sources)
 	s.mux.HandleFunc("/v1/torrents", s.torrents)
 	s.mux.HandleFunc("/v1/torrents/", s.torrentDetails)
+}
+
+func (s *Server) docsRedirect(w http.ResponseWriter, r *http.Request) {
+	http.Redirect(w, r, "/v1/", http.StatusMovedPermanently)
 }
 
 func (s *Server) healthz(w http.ResponseWriter, _ *http.Request) {
