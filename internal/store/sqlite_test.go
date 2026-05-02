@@ -1,0 +1,71 @@
+package store
+
+import (
+	"context"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/esaiaswestberg/magnet-atlas/internal/domain"
+)
+
+func TestSQLiteRepositoryRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "magnet-atlas.db")
+	repo, err := OpenSQLite(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repo.Close()
+
+	infohash := "0123456789abcdef0123456789abcdef01234567"
+	err = repo.Upsert(context.Background(),
+		domain.Torrent{
+			InfoHash:    infohash,
+			Title:       "Example Linux ISO",
+			Category:    "software",
+			SizeBytes:   1024,
+			Seeders:     7,
+			Leechers:    1,
+			PublishedAt: time.Unix(1000, 0).UTC(),
+			MagnetURI:   "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567",
+		},
+		domain.SourceObservation{
+			Source:      "sample",
+			SourceID:    "fixture-1",
+			SourceURL:   "https://example.invalid/torrent/1",
+			Title:       "Example Linux ISO",
+			Category:    "software",
+			SizeBytes:   1024,
+			Seeders:     7,
+			Leechers:    1,
+			PublishedAt: time.Unix(1000, 0).UTC(),
+			ObservedAt:  time.Unix(2000, 0).UTC(),
+			RawJSON:     `{"hello":"world"}`,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	results, err := repo.Search(context.Background(), SearchFilter{Query: "Example", Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := len(results), 1; got != want {
+		t.Fatalf("results len = %d, want %d", got, want)
+	}
+	details, err := repo.Get(context.Background(), infohash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := len(details.Sources), 1; got != want {
+		t.Fatalf("sources len = %d, want %d", got, want)
+	}
+	stats, err := repo.Stats(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := stats.TorrentCount, int64(1); got != want {
+		t.Fatalf("torrent count = %d, want %d", got, want)
+	}
+}

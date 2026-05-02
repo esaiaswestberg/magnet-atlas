@@ -1,0 +1,14 @@
+server:
+  listen: ":8080"
+
+database:
+  path: "./magnet-atlas.db"
+
+ingestion:
+  interval: 30m
+
+sources:
+  - name: sample-fixture
+    type: fixture
+    enabled: true
+    fixture_path: ./testdata/sample-fixture.json

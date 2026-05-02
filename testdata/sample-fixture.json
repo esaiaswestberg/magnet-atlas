@@ -1,0 +1,26 @@
+[
+  {
+    "infohash": "0123456789abcdef0123456789abcdef01234567",
+    "title": "Example Linux ISO",
+    "category": "software",
+    "size_bytes": 1073741824,
+    "seeders": 42,
+    "leechers": 3,
+    "magnet_uri": "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567",
+    "download_url": "https://example.invalid/download/1",
+    "source_id": "fixture-1",
+    "source_url": "https://example.invalid/torrent/1"
+  },
+  {
+    "infohash": "89abcdef0123456789abcdef0123456789abcdef",
+    "title": "Example Documentary",
+    "category": "video",
+    "size_bytes": 2147483648,
+    "seeders": 15,
+    "leechers": 1,
+    "magnet_uri": "magnet:?xt=urn:btih:89abcdef0123456789abcdef0123456789abcdef",
+    "download_url": "https://example.invalid/download/2",
+    "source_id": "fixture-2",
+    "source_url": "https://example.invalid/torrent/2"
+  }
+]

@@ -1,0 +1,184 @@
+openapi: 3.1.0
+info:
+  title: Magnet Atlas API
+  version: 0.1.0
+servers:
+  - url: http://localhost:8080
+paths:
+  /healthz:
+    get:
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+  /v1/status:
+    get:
+      responses:
+        "200":
+          description: Index status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusResponse"
+  /v1/sources:
+    get:
+      responses:
+        "200":
+          description: Source names
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SourcesResponse"
+  /v1/torrents:
+    get:
+      parameters:
+        - in: query
+          name: query
+          schema:
+            type: string
+        - in: query
+          name: source
+          schema:
+            type: string
+        - in: query
+          name: category
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+        - in: query
+          name: offset
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Torrent search results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TorrentsResponse"
+  /v1/torrents/{infohash}:
+    get:
+      parameters:
+        - in: path
+          name: infohash
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Torrent details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TorrentDetailsResponse"
+components:
+  schemas:
+    StatusResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        torrents:
+          type: integer
+          format: int64
+        sources:
+          type: integer
+          format: int64
+        last_updated:
+          type: string
+          nullable: true
+    SourcesResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: string
+    TorrentsResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Torrent"
+        total:
+          type: integer
+    TorrentDetailsResponse:
+      type: object
+      properties:
+        torrent:
+          $ref: "#/components/schemas/Torrent"
+        sources:
+          type: array
+          items:
+            $ref: "#/components/schemas/SourceObservation"
+    Torrent:
+      type: object
+      properties:
+        infohash:
+          type: string
+        title:
+          type: string
+        category:
+          type: string
+        size_bytes:
+          type: integer
+          format: int64
+        seeders:
+          type: integer
+        leechers:
+          type: integer
+        published_at:
+          type: string
+          format: date-time
+          nullable: true
+        magnet_uri:
+          type: string
+        download_url:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+    SourceObservation:
+      type: object
+      properties:
+        source:
+          type: string
+        source_id:
+          type: string
+        source_url:
+          type: string
+        title:
+          type: string
+        category:
+          type: string
+        size_bytes:
+          type: integer
+          format: int64
+        seeders:
+          type: integer
+        leechers:
+          type: integer
+        published_at:
+          type: string
+          format: date-time
+          nullable: true
+        magnet_uri:
+          type: string
+        download_url:
+          type: string
+        observed_at:
+          type: string
+          format: date-time
+        raw_json:
+          type: string
