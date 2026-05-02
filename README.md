@@ -47,7 +47,7 @@ Source support is configurable. The engine should not assume a fixed set of torr
 
 Each source can be enabled, disabled, or configured independently.
 
-Supported source types in v1 include `fixture`, `rss`, and `1337x`.
+Supported source types in v1 include `fixture`, `rss`, `1337x`, and `uindex`.
 
 ## Future Web UI
 

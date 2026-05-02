@@ -2,8 +2,8 @@ package source
 
 import (
 	"context"
+	"io"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -12,13 +12,29 @@ import (
 )
 
 func TestRSSAdapterFetch(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/feed.rss" {
-			http.NotFound(w, r)
-			return
-		}
-		w.Header().Set("Content-Type", "application/rss+xml")
-		_, _ = w.Write([]byte(strings.TrimSpace(`<?xml version="1.0" encoding="UTF-8"?>
+	adapter, err := NewRSSAdapter(config.SourceConfig{
+		Name:    "rss",
+		Type:    "rss",
+		Enabled: true,
+		FeedURL: "https://example.test/feed.rss",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapter.client = &http.Client{
+		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.Path != "/feed.rss" {
+				return &http.Response{
+					StatusCode: http.StatusNotFound,
+					Header:     make(http.Header),
+					Body:       io.NopCloser(strings.NewReader("not found")),
+					Request:    req,
+				}, nil
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body: io.NopCloser(strings.NewReader(strings.TrimSpace(`<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:tv="https://showrss.info">
   <channel>
     <title>showRSS personal feed</title>
@@ -44,18 +60,10 @@ func TestRSSAdapterFetch(t *testing.T) {
       <enclosure url="magnet:?xt=urn:btih:45F0AD848F2F729801BF9D35FF8AC0728EFEA008&amp;dn=The+Amazing+Race+S31E06+Who+Wants+a+Rolex+1080p" length="0" type="application/x-bittorrent" />
     </item>
   </channel>
-</rss>`)))
-	}))
-	defer server.Close()
-
-	adapter, err := NewRSSAdapter(config.SourceConfig{
-		Name:    "rss",
-		Type:    "rss",
-		Enabled: true,
-		FeedURL: server.URL + "/feed.rss",
-	})
-	if err != nil {
-		t.Fatal(err)
+</rss>`))),
+				Request: req,
+			}, nil
+		}),
 	}
 
 	result, err := adapter.Fetch(context.Background(), nil)
@@ -92,8 +100,21 @@ func TestRSSAdapterFetch(t *testing.T) {
 }
 
 func TestRSSAdapterSkipsMalformedItems(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
+	adapter, err := NewRSSAdapter(config.SourceConfig{
+		Name:    "rss",
+		Type:    "rss",
+		Enabled: true,
+		FeedURL: "https://example.test/feed.rss",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapter.client = &http.Client{
+		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body: io.NopCloser(strings.NewReader(`<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
   <channel>
     <item>
@@ -107,18 +128,10 @@ func TestRSSAdapterSkipsMalformedItems(t *testing.T) {
       <description>Example</description>
     </item>
   </channel>
-</rss>`))
-	}))
-	defer server.Close()
-
-	adapter, err := NewRSSAdapter(config.SourceConfig{
-		Name:    "rss",
-		Type:    "rss",
-		Enabled: true,
-		FeedURL: server.URL,
-	})
-	if err != nil {
-		t.Fatal(err)
+</rss>`)),
+				Request: req,
+			}, nil
+		}),
 	}
 
 	result, err := adapter.Fetch(context.Background(), nil)

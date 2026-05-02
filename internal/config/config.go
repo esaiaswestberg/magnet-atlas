@@ -82,10 +82,19 @@ func applyDefaults(cfg *Config) {
 		if strings.TrimSpace(cfg.Sources[i].BaseURL) == "" && cfg.Sources[i].Type == "1337x" {
 			cfg.Sources[i].BaseURL = "https://www.1337xx.to"
 		}
+		if strings.TrimSpace(cfg.Sources[i].BaseURL) == "" && cfg.Sources[i].Type == "uindex" {
+			cfg.Sources[i].BaseURL = "https://uindex.org"
+		}
 		if cfg.Sources[i].Type == "1337x" && cfg.Sources[i].Concurrency <= 0 {
 			cfg.Sources[i].Concurrency = 4
 		}
+		if cfg.Sources[i].Type == "uindex" && cfg.Sources[i].Concurrency <= 0 {
+			cfg.Sources[i].Concurrency = 4
+		}
 		if cfg.Sources[i].Type == "1337x" && cfg.Sources[i].PageWindow <= 0 && cfg.Sources[i].MaxPages > 0 {
+			cfg.Sources[i].PageWindow = cfg.Sources[i].MaxPages
+		}
+		if cfg.Sources[i].Type == "uindex" && cfg.Sources[i].PageWindow <= 0 && cfg.Sources[i].MaxPages > 0 {
 			cfg.Sources[i].PageWindow = cfg.Sources[i].MaxPages
 		}
 	}
@@ -142,14 +151,65 @@ func validate(cfg *Config) error {
 			if strings.TrimSpace(source.BaseURL) == "" {
 				errs = append(errs, idx+".base_url is required for 1337x sources")
 			}
+		case "uindex":
+			if strings.TrimSpace(source.BaseURL) == "" {
+				errs = append(errs, idx+".base_url is required for uindex sources")
+			}
+			for _, category := range source.Categories {
+				if _, ok := normalizeUIndexCategory(category); !ok {
+					errs = append(errs, idx+".categories contains unsupported uindex category")
+					break
+				}
+			}
 		default:
-			errs = append(errs, idx+".type must be fixture, rss or 1337x for v1")
+			errs = append(errs, idx+".type must be fixture, rss, 1337x or uindex for v1")
 		}
 	}
 	if len(errs) > 0 {
 		return errors.New(strings.Join(errs, "; "))
 	}
 	return nil
+}
+
+// NormalizeUIndexCategories maps common category aliases to UIndex section names.
+func NormalizeUIndexCategories(values []string) []string {
+	out := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		cat, ok := normalizeUIndexCategory(value)
+		if !ok {
+			continue
+		}
+		if _, exists := seen[cat]; exists {
+			continue
+		}
+		seen[cat] = struct{}{}
+		out = append(out, cat)
+	}
+	return out
+}
+
+func normalizeUIndexCategory(value string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "movie", "movies":
+		return "movies", true
+	case "television", "tv", "series":
+		return "tv", true
+	case "music":
+		return "music", true
+	case "anime":
+		return "anime", true
+	case "game", "games":
+		return "games", true
+	case "application", "applications", "app", "apps":
+		return "apps", true
+	case "xxx":
+		return "xxx", true
+	case "other", "others":
+		return "other", true
+	default:
+		return "", false
+	}
 }
 
 func normalizeStrings(values []string) []string {

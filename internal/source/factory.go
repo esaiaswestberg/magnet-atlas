@@ -16,6 +16,8 @@ func NewFactory() Factory {
 			return NewRSSAdapter(cfg)
 		case "1337x":
 			return New1337XAdapter(cfg)
+		case "uindex":
+			return NewUIndexAdapter(cfg)
 		default:
 			return nil, fmt.Errorf("unsupported source type %q", cfg.Type)
 		}
