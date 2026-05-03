@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/esaiaswestberg/magnet-atlas/internal/config"
@@ -17,6 +18,7 @@ type App struct {
 	cfg     *config.Config
 	repo    store.Repository
 	servers []source.Adapter
+	daemons []source.Daemon
 	logger  *slog.Logger
 }
 
@@ -24,17 +26,30 @@ type App struct {
 func New(cfg *config.Config, repo store.Repository, logger *slog.Logger) (*App, error) {
 	factory := source.NewFactory()
 	adapters := make([]source.Adapter, 0, len(cfg.Sources))
+	daemons := make([]source.Daemon, 0, len(cfg.Sources))
 	for _, src := range cfg.Sources {
 		if !src.Enabled {
 			continue
 		}
-		adapter, err := factory(src)
+		loaded, err := factory(src)
 		if err != nil {
 			return nil, fmt.Errorf("source %q: %w", src.Name, err)
 		}
-		adapters = append(adapters, adapter)
+		switch adapter := loaded.(type) {
+		case source.Adapter:
+			adapters = append(adapters, adapter)
+		case source.Daemon:
+			daemons = append(daemons, adapter)
+		default:
+			return nil, fmt.Errorf("source %q: unsupported adapter type %T", src.Name, loaded)
+		}
 	}
-	return &App{cfg: cfg, repo: repo, servers: adapters, logger: logger}, nil
+	return &App{cfg: cfg, repo: repo, servers: adapters, daemons: daemons, logger: logger}, nil
+}
+
+// HasBackgroundDaemons reports whether the app has any continuously running sources.
+func (a *App) HasBackgroundDaemons() bool {
+	return len(a.daemons) > 0
 }
 
 // IngestOnce runs one pass over the enabled adapters.
@@ -85,11 +100,39 @@ func (a *App) IngestOnce(ctx context.Context) error {
 
 // Run starts the ingest loop and blocks until ctx is done.
 func (a *App) Run(ctx context.Context) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	var wg sync.WaitGroup
+	errCh := make(chan error, len(a.daemons)+1)
+	for _, daemon := range a.daemons {
+		wg.Add(1)
+		go func(daemon source.Daemon) {
+			defer wg.Done()
+			if err := daemon.Run(ctx, a.repo); err != nil && ctx.Err() == nil {
+				select {
+				case errCh <- fmt.Errorf("daemon %q: %w", daemon.Name(), err):
+				default:
+				}
+			}
+		}(daemon)
+	}
+
 	if err := a.IngestOnce(ctx); err != nil {
+		cancel()
+		wg.Wait()
 		return err
 	}
 	if a.cfg.Ingestion.Interval <= 0 {
-		<-ctx.Done()
+		select {
+		case <-ctx.Done():
+		case err := <-errCh:
+			cancel()
+			wg.Wait()
+			return err
+		}
+		cancel()
+		wg.Wait()
 		return ctx.Err()
 	}
 
@@ -98,7 +141,13 @@ func (a *App) Run(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
+			cancel()
+			wg.Wait()
 			return ctx.Err()
+		case err := <-errCh:
+			cancel()
+			wg.Wait()
+			return err
 		case <-ticker.C:
 			if err := a.IngestOnce(ctx); err != nil && a.logger != nil {
 				a.logger.Error("ingest failed", "error", err)

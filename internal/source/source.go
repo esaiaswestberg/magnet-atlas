@@ -8,14 +8,25 @@ import (
 	"github.com/esaiaswestberg/magnet-atlas/internal/store"
 )
 
+// Source identifies a configured ingest source.
+type Source interface {
+	Name() string
+}
+
 // Adapter fetches torrents from a single configured source.
 type Adapter interface {
-	Name() string
+	Source
 	Fetch(ctx context.Context, repo store.Repository) (FetchResult, error)
 }
 
-// Factory builds adapters from config.
-type Factory func(cfg config.SourceConfig) (Adapter, error)
+// Daemon runs continuously in the background and writes directly to the repository.
+type Daemon interface {
+	Source
+	Run(ctx context.Context, repo store.Repository) error
+}
+
+// Factory builds sources from config.
+type Factory func(cfg config.SourceConfig) (Source, error)
 
 // FetchResult contains one ingest batch from a source adapter.
 type FetchResult struct {

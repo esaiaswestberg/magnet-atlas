@@ -1,0 +1,83 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: magnet_atlas_db
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: magnet_atlas
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: magnet_atlas
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  gluetun:
+    image: qmcgaw/gluetun:latest
+    container_name: gluetun
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    ports:
+      # Bitmagnet WebUI/API, exposed on host
+      - "3333:3333"
+    environment:
+      - VPN_SERVICE_PROVIDER=protonvpn
+      - VPN_TYPE=wireguard
+
+      - WIREGUARD_PRIVATE_KEY=${WIREGUARD_PRIVATE_KEY}
+
+      - VPN_PORT_FORWARDING=on
+      - VPN_PORT_FORWARDING_PROVIDER=protonvpn
+      - VPN_PORT_FORWARDING_UP_COMMAND=/bin/sh -c 'iptables -t nat -A PREROUTING -p tcp --dport {{PORTS}} -j REDIRECT --to-ports 3334; iptables -t nat -A PREROUTING -p udp --dport {{PORTS}} -j REDIRECT --to-ports 3334'
+    volumes:
+      - gluetun_data:/gluetun
+    restart: unless-stopped
+
+  bitmagnet:
+    image: ghcr.io/bitmagnet-io/bitmagnet:latest
+    container_name: bitmagnet
+    network_mode: "service:gluetun"
+    restart: unless-stopped
+    environment:
+      - POSTGRES_HOST=bitmagnet-postgres
+      - POSTGRES_PASSWORD=postgres
+    volumes:
+      - bitmagnet_data:/root/.config/bitmagnet
+    command:
+      - worker
+      - run
+      - --keys=http_server
+      - --keys=queue_server
+      - --keys=dht_crawler
+    depends_on:
+      bitmagnet-postgres:
+        condition: service_healthy
+      gluetun:
+        condition: service_healthy
+
+  bitmagnet-postgres:
+    image: postgres:16-alpine
+    container_name: bitmagnet-postgres
+    volumes:
+      - bitmagnet_postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    environment:
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=bitmagnet
+      - PGUSER=postgres
+    shm_size: 1g
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready
+      start_period: 20s
+      interval: 10s
+
+volumes:
+  postgres_data:
+  gluetun_data:
+  bitmagnet_data:
+  bitmagnet_postgres_data:

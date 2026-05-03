@@ -2,3 +2,6 @@ config.yaml
 magnet-atlas.db*
 *.gen.go
 tmp/**/*
+
+.env*
+!.env.example

@@ -150,6 +150,29 @@ func TestTorznabCapsSearchAndGet(t *testing.T) {
 	}
 }
 
+func TestTorznabSearchIsPublicWithoutAPIKeys(t *testing.T) {
+	repo := &torznabRepo{
+		items: []domain.Torrent{
+			{
+				InfoHash: "0123456789abcdef0123456789abcdef01234567",
+				Title:    "Example Linux ISO",
+			},
+		},
+	}
+	srv := NewServer(repo, []byte("openapi: 3.1.0\n"), nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api?t=search&q=Example", nil)
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if got, want := rec.Code, http.StatusOK; got != want {
+		t.Fatalf("public search = %d, want %d", got, want)
+	}
+	if !strings.Contains(rec.Body.String(), `<title>Example Linux ISO</title>`) {
+		t.Fatalf("public search missing item: %s", rec.Body.String())
+	}
+}
+
 func TestTorznabAPIKeyProtection(t *testing.T) {
 	repo := &torznabRepo{}
 	srv := NewServer(repo, []byte("openapi: 3.1.0\n"), []string{"secret"})
@@ -160,6 +183,48 @@ func TestTorznabAPIKeyProtection(t *testing.T) {
 
 	if got, want := rec.Code, http.StatusOK; got != want {
 		t.Fatalf("auth search = %d, want %d", got, want)
+	}
+	if !strings.Contains(rec.Body.String(), `code="100"`) {
+		t.Fatalf("missing auth error in response: %s", rec.Body.String())
+	}
+}
+
+func TestTorznabAPIKeyAcceptedWhenConfigured(t *testing.T) {
+	repo := &torznabRepo{
+		items: []domain.Torrent{
+			{
+				InfoHash: "0123456789abcdef0123456789abcdef01234567",
+				Title:    "Example Linux ISO",
+			},
+		},
+	}
+	srv := NewServer(repo, []byte("openapi: 3.1.0\n"), []string{"secret"})
+
+	req := httptest.NewRequest(http.MethodGet, "/api?t=search&q=Example&apikey=secret", nil)
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if got, want := rec.Code, http.StatusOK; got != want {
+		t.Fatalf("auth search = %d, want %d", got, want)
+	}
+	if strings.Contains(rec.Body.String(), `code="100"`) {
+		t.Fatalf("unexpected auth error for valid key: %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `<title>Example Linux ISO</title>`) {
+		t.Fatalf("auth search missing item: %s", rec.Body.String())
+	}
+}
+
+func TestTorznabAPIKeyRejectedWhenInvalid(t *testing.T) {
+	repo := &torznabRepo{}
+	srv := NewServer(repo, []byte("openapi: 3.1.0\n"), []string{"secret"})
+
+	req := httptest.NewRequest(http.MethodGet, "/api?t=search&q=Example&apikey=wrong", nil)
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if got, want := rec.Code, http.StatusOK; got != want {
+		t.Fatalf("invalid auth search = %d, want %d", got, want)
 	}
 	if !strings.Contains(rec.Body.String(), `code="100"`) {
 		t.Fatalf("missing auth error in response: %s", rec.Body.String())

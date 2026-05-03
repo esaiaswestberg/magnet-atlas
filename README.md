@@ -47,7 +47,9 @@ Source support is configurable. The engine should not assume a fixed set of torr
 
 Each source can be enabled, disabled, or configured independently.
 
-Supported source types in v1 include `fixture`, `rss`, `1337x`, `uindex`, and `linux-releases`.
+Supported source types in v1 include `fixture`, `rss`, `1337x`, `uindex`, `linux-releases`, and `torznab`.
+
+The `torznab` source polls an external Torznab-compatible indexer such as bitmagnet. Atlas only needs outbound HTTP access to that service, so Atlas itself does not need an inbound port forwarded for this source. Configure the upstream with the exact Torznab endpoint URL, for example `http://bitmagnet:3333/torznab`.
 
 ## Future Web UI
 
@@ -57,7 +59,7 @@ This keeps presentation concerns separate from ingestion and allows the backend 
 
 ## Torznab Support
 
-Magnet Atlas also exposes a Torznab-compatible read API at `/api`.
+Magnet Atlas also exposes a Torznab-compatible read API at `/api?t={function}[&apikey={apikey}]`.
 
 It supports:
 
@@ -67,7 +69,7 @@ It supports:
 - `t=movie`
 - `t=get`
 
-The endpoint accepts optional API keys through `server.torznab_api_keys` in the YAML config. If no keys are configured, the endpoint is public.
+The `apikey` query parameter is optional. If `server.torznab_api_keys` is set in the YAML config, the endpoint requires one of those keys; otherwise it is public.
 
 Category filtering uses Torznab category IDs and maps them onto the indexed torrent categories on a best-effort basis.
 

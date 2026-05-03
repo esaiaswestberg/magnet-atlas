@@ -8,7 +8,7 @@ import (
 
 // NewFactory returns the built-in adapter factory for v1.
 func NewFactory() Factory {
-	return func(cfg config.SourceConfig) (Adapter, error) {
+	return func(cfg config.SourceConfig) (Source, error) {
 		switch cfg.Type {
 		case "fixture":
 			return NewFixtureAdapter(cfg)
@@ -20,6 +20,8 @@ func NewFactory() Factory {
 			return NewUIndexAdapter(cfg)
 		case "linux-releases":
 			return NewLinuxReleasesAdapter(cfg)
+		case "torznab":
+			return NewTorznabAdapter(cfg)
 		default:
 			return nil, fmt.Errorf("unsupported source type %q", cfg.Type)
 		}

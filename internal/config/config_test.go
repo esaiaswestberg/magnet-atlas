@@ -33,6 +33,10 @@ sources:
   - name: linux
     type: linux-releases
     enabled: false
+  - name: bitmagnet
+    type: torznab
+    enabled: false
+    base_url: https://example.invalid/api
 `)
 	if err := os.WriteFile(path, content, 0o600); err != nil {
 		t.Fatal(err)
@@ -51,7 +55,7 @@ sources:
 	if got, want := cfg.Database.Type, "sqlite"; got != want {
 		t.Fatalf("database type = %q, want %q", got, want)
 	}
-	if got, want := len(cfg.Sources), 5; got != want {
+	if got, want := len(cfg.Sources), 6; got != want {
 		t.Fatalf("sources len = %d, want %d", got, want)
 	}
 	if got, want := cfg.Sources[2].BaseURL, "https://www.1337xx.to"; got != want {
@@ -71,6 +75,15 @@ sources:
 	}
 	if got, want := cfg.Sources[4].Concurrency, 4; got != want {
 		t.Fatalf("linux releases concurrency = %d, want %d", got, want)
+	}
+	if got, want := cfg.Sources[5].BaseURL, "https://example.invalid/api"; got != want {
+		t.Fatalf("torznab base url = %q, want %q", got, want)
+	}
+	if got, want := cfg.Sources[5].PageWindow, 20; got != want {
+		t.Fatalf("torznab page window = %d, want %d", got, want)
+	}
+	if got, want := cfg.Sources[5].PageSize, 100; got != want {
+		t.Fatalf("torznab page size = %d, want %d", got, want)
 	}
 }
 
@@ -167,5 +180,26 @@ sources:
 
 	if _, err := Load(path); err == nil {
 		t.Fatal("expected uindex source with invalid category to fail")
+	}
+}
+
+func TestLoadRejectsTorznabSourceWithoutBaseURL(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := []byte(`
+database:
+  type: sqlite
+  path: ./magnet-atlas.db
+sources:
+  - name: bitmagnet
+    type: torznab
+    enabled: true
+`)
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Load(path); err == nil {
+		t.Fatal("expected torznab source without base_url to fail")
 	}
 }

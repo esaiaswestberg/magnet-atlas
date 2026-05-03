@@ -1,10 +1,13 @@
 server:
+  # HTTP listen address for the API server.
   listen: ":8080"
   # Optional Torznab API keys. Leave empty for public access.
   torznab_api_keys:
     - example-key
 
+
 database:
+  # SQLite is the easiest local default; use postgres for shared or larger deployments.
   type: sqlite
   path: "./magnet-atlas.db"
 
@@ -13,18 +16,23 @@ database:
 #   type: postgres
 #   url: postgres://magnet_atlas:secret@localhost:5432/magnet_atlas?sslmode=disable
 
+
 ingestion:
+  # Poll interval for normal poll-based sources, including Torznab-backed external indexers.
   interval: 30m
+
 
 sources:
   - name: sample-fixture
     type: fixture
     enabled: true
     fixture_path: ./testdata/sample-fixture.json
+
   - name: showrss
     type: rss
     enabled: false
     feed_url: https://showrss.info/rss?user=example
+
   - name: 1337x
     type: 1337x
     enabled: false
@@ -35,6 +43,7 @@ sources:
     page_window: 20
     concurrency: 4
     request_delay: 1s
+
   - name: uindex
     type: uindex
     enabled: false
@@ -44,7 +53,25 @@ sources:
       - tv
     page_window: 20
     concurrency: 4
+
   - name: ubuntu-releases
     type: linux-releases
     enabled: false
     base_url: https://releases.ubuntu.com/
+
+  - name: bitmagnet
+    type: torznab
+    enabled: false
+    base_url: http://127.0.0.1:3333/torznab # Exact Torznab endpoint for Bitmagnet; Atlas does outbound HTTP only.
+    search_query: "" # Leave blank to poll broadly.
+    categories:
+      - movies # Torznab category names are normalized to standard IDs.
+      - tv
+    page_window: 20
+    page_size: 100 # Results requested per page from the upstream service.
+
+  - name: torznab
+    type: torznab
+    enabled: false
+    base_url: https://example.invalid/api # Use the exact Torznab endpoint URL; Atlas does not infer the path.
+    search_query: "" # Optional query string sent to the upstream Torznab endpoint.

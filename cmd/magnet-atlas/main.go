@@ -71,6 +71,9 @@ func run(ctx context.Context, configPath string, ingestOnce bool, logger *slog.L
 	if err != nil {
 		return fmt.Errorf("build app: %w", err)
 	}
+	if ingestOnce && daemon.HasBackgroundDaemons() {
+		return fmt.Errorf("ingest-once cannot be used with background sources")
+	}
 
 	if ingestOnce {
 		logger.Info("starting one-shot ingest")
