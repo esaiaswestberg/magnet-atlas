@@ -21,6 +21,9 @@ services:
     devices:
       - /dev/net/tun:/dev/net/tun
     ports:
+      # Flaresolverr API
+      - "8191:8191"
+
       # Bitmagnet WebUI/API, exposed on host
       - "3333:3333"
     environment:
@@ -34,6 +37,14 @@ services:
       - VPN_PORT_FORWARDING_UP_COMMAND=/bin/sh -c 'iptables -t nat -A PREROUTING -p tcp --dport {{PORTS}} -j REDIRECT --to-ports 3334; iptables -t nat -A PREROUTING -p udp --dport {{PORTS}} -j REDIRECT --to-ports 3334'
     volumes:
       - gluetun_data:/gluetun
+    restart: unless-stopped
+
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: flaresolverr
+    network_mode: "service:gluetun"
+    environment:
+      - LOG_LEVEL=info
     restart: unless-stopped
 
   bitmagnet:

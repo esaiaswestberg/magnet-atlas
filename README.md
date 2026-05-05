@@ -47,9 +47,11 @@ Source support is configurable. The engine should not assume a fixed set of torr
 
 Each source can be enabled, disabled, or configured independently.
 
-Supported source types in v1 include `fixture`, `rss`, `1337x`, `uindex`, `linux-releases`, and `torznab`.
+Supported source types in v1 include `fixture`, `rss`, `1337x`, `uindex`, `linux-releases`, `torznab`, and `rarbg`.
 
 The `torznab` source polls an external Torznab-compatible indexer such as bitmagnet. Atlas only needs outbound HTTP access to that service, so Atlas itself does not need an inbound port forwarded for this source. Configure the upstream with the exact Torznab endpoint URL, for example `http://bitmagnet:3333/torznab`.
+
+The `rarbg` source uses FlareSolverr to fetch fixed RARBG sections and their torrent detail pages through a browser-backed solver. Atlas only needs outbound HTTP access to FlareSolverr and the configured RARBG base URL. Configure the solver with its `/v1` endpoint, for example `http://localhost:8191/v1`. The source supports `sections`, `page_window`, `concurrency`, `request_delay`, `backoff_delay`, and `request_attempts` to match the section/page crawl used by the RARBG script example.
 
 ## Future Web UI
 

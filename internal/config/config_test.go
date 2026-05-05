@@ -3,7 +3,9 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
+	"time"
 )
 
 func TestLoadAppliesDefaultsAndParsesSources(t *testing.T) {
@@ -37,6 +39,17 @@ sources:
     type: torznab
     enabled: false
     base_url: https://example.invalid/api
+  - name: rarbg
+    type: rarbg
+    enabled: false
+    base_url: https://example.invalid
+    flaresolverr_url: http://localhost:8191
+    sections:
+      - movies
+      - tv
+    request_delay: 1s
+    backoff_delay: 750ms
+    request_attempts: 3
 `)
 	if err := os.WriteFile(path, content, 0o600); err != nil {
 		t.Fatal(err)
@@ -55,7 +68,7 @@ sources:
 	if got, want := cfg.Database.Type, "sqlite"; got != want {
 		t.Fatalf("database type = %q, want %q", got, want)
 	}
-	if got, want := len(cfg.Sources), 6; got != want {
+	if got, want := len(cfg.Sources), 7; got != want {
 		t.Fatalf("sources len = %d, want %d", got, want)
 	}
 	if got, want := cfg.Sources[2].BaseURL, "https://www.1337xx.to"; got != want {
@@ -84,6 +97,30 @@ sources:
 	}
 	if got, want := cfg.Sources[5].PageSize, 100; got != want {
 		t.Fatalf("torznab page size = %d, want %d", got, want)
+	}
+	if got, want := cfg.Sources[6].BaseURL, "https://example.invalid"; got != want {
+		t.Fatalf("rarbg base url = %q, want %q", got, want)
+	}
+	if got, want := cfg.Sources[6].FlareSolverrURL, "http://localhost:8191"; got != want {
+		t.Fatalf("rarbg flaresolverr url = %q, want %q", got, want)
+	}
+	if got, want := cfg.Sources[6].Sections, []string{"movies", "tv"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("rarbg sections = %v, want %v", got, want)
+	}
+	if got, want := cfg.Sources[6].Concurrency, 4; got != want {
+		t.Fatalf("rarbg concurrency = %d, want %d", got, want)
+	}
+	if got, want := cfg.Sources[6].PageWindow, 1; got != want {
+		t.Fatalf("rarbg page window = %d, want %d", got, want)
+	}
+	if got, want := cfg.Sources[6].RequestDelay, time.Second; got != want {
+		t.Fatalf("rarbg request delay = %s, want %s", got, want)
+	}
+	if got, want := cfg.Sources[6].BackoffDelay, 750*time.Millisecond; got != want {
+		t.Fatalf("rarbg backoff delay = %s, want %s", got, want)
+	}
+	if got, want := cfg.Sources[6].RequestAttempts, 3; got != want {
+		t.Fatalf("rarbg request attempts = %d, want %d", got, want)
 	}
 }
 
@@ -201,5 +238,27 @@ sources:
 
 	if _, err := Load(path); err == nil {
 		t.Fatal("expected torznab source without base_url to fail")
+	}
+}
+
+func TestLoadRejectsRarbgSourceWithoutFlareSolverrURL(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := []byte(`
+database:
+  type: sqlite
+  path: ./magnet-atlas.db
+sources:
+  - name: rarbg
+    type: rarbg
+    enabled: true
+    base_url: https://example.invalid
+`)
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Load(path); err == nil {
+		t.Fatal("expected rarbg source without flaresolverr_url to fail")
 	}
 }

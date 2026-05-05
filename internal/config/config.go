@@ -37,14 +37,18 @@ type SourceConfig struct {
 	FixturePath         string        `yaml:"fixture_path,omitempty"`
 	FeedURL             string        `yaml:"feed_url,omitempty"`
 	BaseURL             string        `yaml:"base_url,omitempty"`
+	FlareSolverrURL     string        `yaml:"flaresolverr_url,omitempty"`
 	SearchQuery         string        `yaml:"search_query,omitempty"`
 	ReleasePaths        []string      `yaml:"release_paths,omitempty"`
+	Sections            []string      `yaml:"sections,omitempty"`
 	Categories          []string      `yaml:"categories,omitempty"`
 	PageWindow          int           `yaml:"page_window,omitempty"`
 	PageSize            int           `yaml:"page_size,omitempty"`
 	MaxPages            int           `yaml:"max_pages,omitempty"`
 	Concurrency         int           `yaml:"concurrency,omitempty"`
 	RequestDelay        time.Duration `yaml:"request_delay,omitempty"`
+	BackoffDelay        time.Duration `yaml:"backoff_delay,omitempty"`
+	RequestAttempts     int           `yaml:"request_attempts,omitempty"`
 	BindAddress         string        `yaml:"bind_address,omitempty"`
 	BootstrapNodes      []string      `yaml:"bootstrap_nodes,omitempty"`
 	SeedInfoHashes      []string      `yaml:"seed_infohashes,omitempty"`
@@ -98,6 +102,9 @@ func applyDefaults(cfg *Config) {
 		if strings.TrimSpace(cfg.Sources[i].BaseURL) == "" && cfg.Sources[i].Type == "linux-releases" {
 			cfg.Sources[i].BaseURL = "https://releases.ubuntu.com/"
 		}
+		if cfg.Sources[i].Type == "rarbg" && len(cfg.Sources[i].Sections) == 0 {
+			cfg.Sources[i].Sections = []string{"movies", "tv", "anime"}
+		}
 		if cfg.Sources[i].Type == "torznab" && cfg.Sources[i].PageSize <= 0 {
 			cfg.Sources[i].PageSize = 100
 		}
@@ -106,6 +113,21 @@ func applyDefaults(cfg *Config) {
 		}
 		if cfg.Sources[i].Type == "torznab" && cfg.Sources[i].PageWindow <= 0 {
 			cfg.Sources[i].PageWindow = 20
+		}
+		if cfg.Sources[i].Type == "rarbg" && cfg.Sources[i].Concurrency <= 0 {
+			cfg.Sources[i].Concurrency = 4
+		}
+		if cfg.Sources[i].Type == "rarbg" && cfg.Sources[i].PageWindow <= 0 {
+			cfg.Sources[i].PageWindow = 1
+		}
+		if cfg.Sources[i].Type == "rarbg" && cfg.Sources[i].RequestDelay <= 0 {
+			cfg.Sources[i].RequestDelay = time.Second
+		}
+		if cfg.Sources[i].Type == "rarbg" && cfg.Sources[i].BackoffDelay <= 0 {
+			cfg.Sources[i].BackoffDelay = 750 * time.Millisecond
+		}
+		if cfg.Sources[i].Type == "rarbg" && cfg.Sources[i].RequestAttempts <= 0 {
+			cfg.Sources[i].RequestAttempts = 3
 		}
 		if cfg.Sources[i].Type == "1337x" && cfg.Sources[i].Concurrency <= 0 {
 			cfg.Sources[i].Concurrency = 4
@@ -200,8 +222,21 @@ func validate(cfg *Config) error {
 					break
 				}
 			}
+		case "rarbg":
+			if strings.TrimSpace(source.BaseURL) == "" {
+				errs = append(errs, idx+".base_url is required for rarbg sources")
+			}
+			if strings.TrimSpace(source.FlareSolverrURL) == "" {
+				errs = append(errs, idx+".flaresolverr_url is required for rarbg sources")
+			}
+			for _, section := range source.Sections {
+				if strings.TrimSpace(section) == "" {
+					errs = append(errs, idx+".sections contains an empty rarbg section")
+					break
+				}
+			}
 		default:
-			errs = append(errs, idx+".type must be fixture, rss, 1337x, uindex, linux-releases or torznab for v1")
+			errs = append(errs, idx+".type must be fixture, rss, 1337x, uindex, linux-releases, torznab or rarbg for v1")
 		}
 	}
 	if len(errs) > 0 {

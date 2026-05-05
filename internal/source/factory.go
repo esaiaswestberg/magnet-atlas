@@ -22,6 +22,8 @@ func NewFactory() Factory {
 			return NewLinuxReleasesAdapter(cfg)
 		case "torznab":
 			return NewTorznabAdapter(cfg)
+		case "rarbg":
+			return NewRarbgAdapter(cfg)
 		default:
 			return nil, fmt.Errorf("unsupported source type %q", cfg.Type)
 		}

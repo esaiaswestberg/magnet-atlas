@@ -75,3 +75,18 @@ sources:
     enabled: false
     base_url: https://example.invalid/api # Use the exact Torznab endpoint URL; Atlas does not infer the path.
     search_query: "" # Optional query string sent to the upstream Torznab endpoint.
+
+  - name: rarbg
+    type: rarbg
+    enabled: false
+    base_url: https://example.invalid # Set this to the RARBG mirror or browse entrypoint you want to crawl.
+    flaresolverr_url: http://localhost:8191/v1 # Point this at your FlareSolverr instance.
+    sections:
+      - movies
+      - tv
+      - anime
+    page_window: 1 # Number of section pages to fetch per section.
+    concurrency: 4 # Parallel detail-page fetches.
+    request_delay: 1s # Delay before each section-page fetch.
+    backoff_delay: 750ms # Exponential backoff base for transient FlareSolverr errors.
+    request_attempts: 3 # Total FlareSolverr attempts per request.
